@@ -1,0 +1,18 @@
+# Build artifacts
+*.o
+*.elf
+*.iso
+iso/
+myos.elf
+myos.iso
+
+# Disk image (persistent user data)
+disk.img
+
+# OVMF VARS
+OVMF_VARS.fd
+
+# Editor / OS
+.vscode/
+*.swp
+.DS_Store
