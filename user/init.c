@@ -16,7 +16,10 @@ static void cmd_help(void) {
     puts("  echo [args...]      print args\n");
     puts("  help                show this\n");
     puts("  printf              demo printf\n");
-    puts("  ls                  list files\n");
+    puts("  ls [path]           list files\n");
+    puts("  mkdir <dir>         create directory\n");
+    puts("  cd <dir>            change directory\n");
+    puts("  pwd                 print working directory\n");
     puts("  cat <file>          print file contents\n");
     puts("  write <file> <txt>  write text to file\n");
     puts("  rm <file>           remove file\n");
@@ -33,14 +36,30 @@ static void cmd_printf_demo(void) {
     printf("mix:  %s=%d (0x%x)\n", "answer", 42, 42);
 }
 
-static void cmd_ls(void) {
-    static char buf[1024];
-    long n = fs_ls(buf, sizeof(buf));
-    if (n <= 0) {
-        puts("(empty)\n");
-        return;
-    }
+static void cmd_ls(int argc, char* argv[]) {
+    static char buf[2048];
+    long n;
+    if (argc >= 2) n = fs_ls_path(argv[1], buf, sizeof(buf));
+    else           n = fs_ls(buf, sizeof(buf));
+    if (n <= 0) { puts("(empty)\n"); return; }
     for (long i = 0; i < n; i++) putchar(buf[i]);
+}
+
+static void cmd_mkdir(const char* name) {
+    if (fs_mkdir(name) == 0) printf("created %s\n", name);
+    else printf("mkdir: %s failed\n", name);
+}
+
+static void cmd_cd(const char* name) {
+    if (fs_chdir(name) == 0) return;
+    printf("cd: %s: no such directory\n", name);
+}
+
+static void cmd_pwd(void) {
+    char buf[256];
+    fs_getcwd(buf, sizeof(buf));
+    puts(buf);
+    putchar('\n');
 }
 
 static void cmd_cat(const char* name) {
@@ -108,7 +127,7 @@ static int tokenize(char* line, char* argv[], int max) {
 }
 
 void _start(void) {
-    puts("flyos shell v0.5\n");
+    puts("flyos shell v0.6\n");
     puts("type 'help' for commands\n\n");
 
     char* line = (char*)malloc(128);
@@ -125,7 +144,16 @@ void _start(void) {
         if      (strcmp(argv[0], "echo")   == 0) cmd_echo(argc, argv);
         else if (strcmp(argv[0], "help")   == 0) cmd_help();
         else if (strcmp(argv[0], "printf") == 0) cmd_printf_demo();
-        else if (strcmp(argv[0], "ls")     == 0) cmd_ls();
+        else if (strcmp(argv[0], "ls")     == 0) cmd_ls(argc, argv);
+        else if (strcmp(argv[0], "mkdir")  == 0) {
+            if (argc < 2) puts("usage: mkdir <dir>\n");
+            else cmd_mkdir(argv[1]);
+        }
+        else if (strcmp(argv[0], "cd")     == 0) {
+            if (argc < 2) puts("usage: cd <dir>\n");
+            else cmd_cd(argv[1]);
+        }
+        else if (strcmp(argv[0], "pwd")    == 0) cmd_pwd();
         else if (strcmp(argv[0], "cat")    == 0) {
             if (argc < 2) puts("usage: cat <file>\n");
             else cmd_cat(argv[1]);

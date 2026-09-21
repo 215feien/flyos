@@ -14,6 +14,12 @@ long fs_read(int fd, void* buf, long n);
 long fs_write(int fd, const void* buf, long n);
 long fs_ls(char* buf, long max);
 int  fs_unlink(const char* name);
-int fs_sync(void);
+int  fs_sync(void);
+
+/* 目录 */
+int  fs_mkdir(const char* path);
+int  fs_chdir(const char* path);
+int  fs_getcwd(char* buf, int max);
+long fs_ls_path(const char* path, char* buf, long max);
 
 #endif

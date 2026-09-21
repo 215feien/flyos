@@ -151,3 +151,33 @@ int fs_unlink(const char* name) {
 int fs_sync(void) {
     return (int)sys_sync();
 }
+
+int fs_mkdir(const char* path) {
+    return (int)sys_mkdir(path);
+}
+
+int fs_chdir(const char* path) {
+    return (int)sys_chdir(path);
+}
+
+int fs_getcwd(char* buf, int max) {
+    return (int)sys_getcwd(buf, max);
+}
+
+long fs_ls_path(const char* path, char* buf, long max) {
+    int fd = (int)sys_opendir(path);
+    if (fd < 0) return -1;
+    long pos = 0;
+    char name[64];
+    while (1) {
+        long r = sys_readdir(fd, name, sizeof(name));
+        if (r <= 0) break;
+        long l = 0;
+        while (name[l]) l++;
+        if (pos + l + 1 > max) break;
+        for (long i = 0; i < l; i++) buf[pos++] = name[i];
+        buf[pos++] = '\n';
+    }
+    sys_close(fd);
+    return pos;
+}

@@ -55,3 +55,18 @@ i64 sys_sync(void) {
 i64 sys_sleep(i64 ms) {
     return syscall3(SYS_SLEEP, ms, 0, 0);
 }
+i64 sys_mkdir(const char* path) {
+    return syscall3(SYS_MKDIR, (i64)path, 0, 0);
+}
+i64 sys_chdir(const char* path) {
+    return syscall3(SYS_CHDIR, (i64)path, 0, 0);
+}
+i64 sys_getcwd(char* buf, i64 max) {
+    return syscall3(SYS_GETCWD, (i64)buf, max, 0);
+}
+i64 sys_opendir(const char* path) {
+    return syscall3(SYS_OPENDIR, (i64)path, 0, 0);
+}
+i64 sys_readdir(int fd, char* name, i64 max) {
+    return syscall3(SYS_READDIR, fd, (i64)name, max);
+}

@@ -14,6 +14,11 @@ typedef long i64;
 #define SYS_UNLINK  9
 #define SYS_SYNC    10
 #define SYS_SLEEP   11
+#define SYS_MKDIR   12
+#define SYS_CHDIR   13
+#define SYS_GETCWD  14
+#define SYS_OPENDIR 15
+#define SYS_READDIR 16
 
 i64  sys_write (int fd, const void* buf, i64 n);
 i64  sys_read  (int fd, void* buf,       i64 n);
@@ -26,5 +31,10 @@ i64  sys_ls    (char* buf, i64 max);
 i64  sys_unlink(const char* name);
 i64  sys_sync  (void);
 i64  sys_sleep (i64 ms);
+i64  sys_mkdir (const char* path);
+i64  sys_chdir (const char* path);
+i64  sys_getcwd(char* buf, i64 max);
+i64  sys_opendir(const char* path);
+i64  sys_readdir(int fd, char* name, i64 max);
 
 #endif
