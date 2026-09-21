@@ -16,10 +16,11 @@ typedef struct window {
     uint32_t     title_fg;
     uint32_t     border_color;
     int          visible;
+    int          focused;
 
-    /* 回调：应用自己实现 */
     void (*on_draw)(struct window*);
     void (*on_click)(struct window*, int mx, int my);
+    void (*on_move)(struct window*);
 
     struct window* next;
 } window_t;

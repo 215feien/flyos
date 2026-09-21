@@ -16,9 +16,11 @@ void window_init(window_t* win, int x, int y, int w, int h, const char* title) {
     win->border_color = fb_rgb(20, 20, 30);
 
     win->visible = 1;
+    win->focused = 0;
     win->on_draw  = 0;
     win->on_click = 0;
     win->next = 0;
+    win->on_move  = 0;
 }
 
 void window_set_colors(window_t* win, uint32_t bg, uint32_t title_bg, uint32_t title_fg) {
@@ -32,17 +34,21 @@ void window_draw(window_t* win) {
 
     fb_fill_rect(win->x, win->y, win->w, win->h, win->border_color);
 
-    fb_fill_rect(win->x + WIN_BORDER, win->y + WIN_BORDER,
-                 win->w - 2 * WIN_BORDER, WIN_TITLE_H, win->title_bg);
+    /* 焦点窗口用原色，非焦点变暗 */
+    uint32_t title_bg = win->focused
+                        ? win->title_bg
+                        : ((win->title_bg >> 1) & 0x7F7F7F7F);
 
-    fb_term_draw_text_at(win->x + 8, win->y + 4, win->title, win->title_fg, win->title_bg);
+    fb_fill_rect(win->x + WIN_BORDER, win->y + WIN_BORDER,
+                 win->w - 2 * WIN_BORDER, WIN_TITLE_H, title_bg);
+
+    fb_term_draw_text_at(win->x + 8, win->y + 4, win->title, win->title_fg, title_bg);
 
     int cy = win->y + WIN_BORDER + WIN_TITLE_H;
     int ch = win->h - 2 * WIN_BORDER - WIN_TITLE_H;
     fb_fill_rect(win->x + WIN_BORDER, cy,
                  win->w - 2 * WIN_BORDER, ch, win->bg_color);
 
-    /* 让应用画自己的内容 */
     if (win->on_draw) win->on_draw(win);
 }
 

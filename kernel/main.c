@@ -131,9 +131,22 @@ void kmain(uint32_t mb_info, uint32_t magic) {
     gui_init();
 
     /* 终端窗口：shell 输出进这里 */
+    gui_init();
+
     static window_t term_win;
     term_window_create(&term_win, 50, 50, 700, 500, "Terminal");
     gui_add_window(&term_win);
+
+    window_init(&demo_win, 800, 100, 420, 300, "Counter Demo");
+    window_set_colors(&demo_win, fb_rgb(40, 40, 55),
+                                 fb_rgb(70, 100, 200),
+                                 fb_rgb(255, 255, 255));
+    demo_win.on_draw  = demo_draw;
+    demo_win.on_click = demo_click;
+    gui_add_window(&demo_win);
+
+    term_win.focused = 1;   /* 终端默认聚焦 */
+    gui_redraw();
 
     /* 欢迎语写在终端窗口里 */
     fb_term_write("Hello x86_64 OS!\n");

@@ -46,17 +46,21 @@ void fb_term_set_region(int x, int y, int w, int h) {
     region_y = y;
     region_w = w;
     region_h = h;
-    cols = w / CHAR_W;
-    rows = h / CHAR_H;
-    if (cols > MAX_COLS) cols = MAX_COLS;
-    if (rows > MAX_ROWS) rows = MAX_ROWS;
+    int new_cols = w / CHAR_W;
+    int new_rows = h / CHAR_H;
+    if (new_cols > MAX_COLS) new_cols = MAX_COLS;
+    if (new_rows > MAX_ROWS) new_rows = MAX_ROWS;
 
-    for (int r = 0; r < rows; r++)
-        for (int c = 0; c < cols; c++)
-            screen_buf[r][c] = ' ';
-
-    cursor_x = 0;
-    cursor_y = 0;
+    /* 只在尺寸真的变了才清 buffer */
+    if (new_cols != cols || new_rows != rows) {
+        cols = new_cols;
+        rows = new_rows;
+        for (int r = 0; r < rows; r++)
+            for (int c = 0; c < cols; c++)
+                screen_buf[r][c] = ' ';
+        cursor_x = 0;
+        cursor_y = 0;
+    }
 }
 
 void fb_term_clear(void) {

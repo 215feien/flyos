@@ -2,9 +2,21 @@
 #include "fb_term.h"
 #include "fb.h"
 
+static void term_update_region(window_t* win) {
+    int rx = win->x + WIN_BORDER;
+    int ry = win->y + WIN_BORDER + WIN_TITLE_H;
+    int rw = win->w - 2 * WIN_BORDER;
+    int rh = win->h - 2 * WIN_BORDER - WIN_TITLE_H;
+    fb_term_set_region(rx, ry, rw, rh);
+}
+
 static void term_on_draw(window_t* win) {
     (void)win;
     fb_term_redraw();
+}
+
+static void term_on_move(window_t* win) {
+    term_update_region(win);
 }
 
 void term_window_create(window_t* win, int x, int y, int w, int h, const char* title) {
@@ -13,18 +25,10 @@ void term_window_create(window_t* win, int x, int y, int w, int h, const char* t
                              fb_rgb(70, 100, 200),
                              fb_rgb(255, 255, 255));
     win->on_draw = term_on_draw;
-
-    int rx = win->x + WIN_BORDER;
-    int ry = win->y + WIN_BORDER + WIN_TITLE_H;
-    int rw = win->w - 2 * WIN_BORDER;
-    int rh = win->h - 2 * WIN_BORDER - WIN_TITLE_H;
-    fb_term_set_region(rx, ry, rw, rh);
+    win->on_move = term_on_move;
+    term_update_region(win);
 }
 
 void term_window_focus(window_t* win) {
-    int rx = win->x + WIN_BORDER;
-    int ry = win->y + WIN_BORDER + WIN_TITLE_H;
-    int rw = win->w - 2 * WIN_BORDER;
-    int rh = win->h - 2 * WIN_BORDER - WIN_TITLE_H;
-    fb_term_set_region(rx, ry, rw, rh);
+    term_update_region(win);
 }
