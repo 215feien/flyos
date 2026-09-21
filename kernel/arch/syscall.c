@@ -5,8 +5,8 @@
 #include "file.h"
 #include "ramfs.h"
 #include "persist.h"
-#include "fb_term.h"
 #include "task.h"
+#include "fb_term.h"
 #include <stdint.h>
 
 #define MSR_EFER   0xC0000080
@@ -21,7 +21,6 @@ static inline void wrmsr(uint32_t msr, uint64_t v) {
     uint32_t hi = (uint32_t)(v >> 32);
     __asm__ volatile ("wrmsr" : : "c"(msr), "a"(lo), "d"(hi));
 }
-
 static inline uint64_t rdmsr(uint32_t msr) {
     uint32_t lo, hi;
     __asm__ volatile ("rdmsr" : "=a"(lo), "=d"(hi) : "c"(msr));
@@ -33,7 +32,6 @@ void syscall_init(void) {
 
     uint64_t star = ((uint64_t)0x08 << 32) | ((uint64_t)0x10 << 48);
     wrmsr(MSR_STAR, star);
-
     wrmsr(MSR_LSTAR, (uint64_t)syscall_entry);
     wrmsr(MSR_FMASK, 0x200 | 0x400 | 0x800 | 0x40000);
 
@@ -69,10 +67,8 @@ uint64_t syscall_dispatch(uint64_t nr, uint64_t a1, uint64_t a2, uint64_t a3) {
             persist_save();
             for (;;) __asm__ volatile ("cli; hlt");
 
-        case SYS_OPEN: {
-            const char* name = (const char*)a1;
-            return (uint64_t)(int64_t)file_open(name);
-        }
+        case SYS_OPEN:
+            return (uint64_t)(int64_t)file_open((const char*)a1);
 
         case SYS_CLOSE:
             return (uint64_t)(int64_t)file_close((int)a1);
@@ -84,20 +80,25 @@ uint64_t syscall_dispatch(uint64_t nr, uint64_t a1, uint64_t a2, uint64_t a3) {
             return (uint64_t)file_write((int)a1, (const void*)a2, a3);
 
         case SYS_UNLINK: {
-            const char* name = (const char*)a1;
-            return (uint64_t)(int64_t)ramfs_unlink(name);
+            ramfs_node_t* n = ramfs_lookup((const char*)a1);
+            if (!n) return (uint64_t)(int64_t)-1;
+            return (uint64_t)(int64_t)ramfs_unlink_node(n);
         }
 
         case SYS_LS: {
             char* buf = (char*)a1;
             uint64_t max = a2;
             uint64_t pos = 0;
-            for (ramfs_file_t* f = ramfs_first(); f; f = f->next) {
-                const char* n = f->name;
+            ramfs_node_t* dir = ramfs_cwd();
+            for (ramfs_node_t* c = dir->children; c; c = c->next) {
+                const char* nm = c->name;
                 uint64_t l = 0;
-                while (n[l]) l++;
-                if (pos + l + 1 > max) break;
-                for (uint64_t i = 0; i < l; i++) buf[pos++] = n[i];
+                while (nm[l]) l++;
+                /* 目录后加 '/' */
+                uint64_t extra = (c->type == NODE_DIR) ? 1 : 0;
+                if (pos + l + extra + 1 > max) break;
+                for (uint64_t i = 0; i < l; i++) buf[pos++] = nm[i];
+                if (extra) buf[pos++] = '/';
                 buf[pos++] = '\n';
             }
             return pos;
@@ -109,6 +110,34 @@ uint64_t syscall_dispatch(uint64_t nr, uint64_t a1, uint64_t a2, uint64_t a3) {
         case SYS_SLEEP:
             task_sleep(a1);
             return 0;
+
+        case SYS_MKDIR: {
+            ramfs_node_t* n = ramfs_mkdir(ramfs_cwd(), (const char*)a1);
+            return n ? 0 : (uint64_t)(int64_t)-1;
+        }
+
+        case SYS_CHDIR: {
+            ramfs_node_t* n = ramfs_lookup((const char*)a1);
+            if (!n || n->type != NODE_DIR) return (uint64_t)(int64_t)-1;
+            ramfs_set_cwd(n);
+            return 0;
+        }
+
+        case SYS_GETCWD: {
+            char* buf = (char*)a1;
+            int max = (int)a2;
+            ramfs_get_path(ramfs_cwd(), buf, max);
+            return 0;
+        }
+
+        case SYS_OPENDIR:
+            return (uint64_t)(int64_t)dir_open((const char*)a1);
+
+        case SYS_READDIR: {
+            char* name = (char*)a2;
+            int max = (int)a3;
+            return (uint64_t)(int64_t)dir_read((int)a1, name, max, 0);
+        }
 
         default:
             serial_printf("SYSCALL: unknown %lu\n", nr);

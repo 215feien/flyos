@@ -5,7 +5,7 @@
 #include <stdint.h>
 
 #define HEAP_START   0xFFFF800000000000UL
-#define HEAP_PAGES   256
+#define HEAP_PAGES   512
 #define HEAP_SIZE    ((uint64_t)HEAP_PAGES * PAGE_SIZE)
 
 #define ALIGN_UP(x, a)  (((x) + (a) - 1) & ~((uint64_t)(a) - 1))

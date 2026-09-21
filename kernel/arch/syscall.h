@@ -17,5 +17,10 @@ uint64_t syscall_dispatch(uint64_t nr, uint64_t a1, uint64_t a2, uint64_t a3);
 #define SYS_UNLINK  9
 #define SYS_SYNC    10
 #define SYS_SLEEP   11
+#define SYS_MKDIR   12
+#define SYS_CHDIR   13
+#define SYS_GETCWD  14
+#define SYS_OPENDIR 15
+#define SYS_READDIR 16
 
 #endif
