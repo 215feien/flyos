@@ -7,6 +7,7 @@
 #include "persist.h"
 #include "task.h"
 #include "fb_term.h"
+#include "sem.h"
 #include <stdint.h>
 
 #define MSR_EFER   0xC0000080
@@ -142,6 +143,14 @@ uint64_t syscall_dispatch(uint64_t nr, uint64_t a1, uint64_t a2, uint64_t a3) {
 
         case SYS_SPAWN:
             return (uint64_t)(int64_t)kernel_spawn_child();
+
+        case SYS_SEM_WAIT:
+            sem_wait((int)a1);
+            return 0;
+
+        case SYS_SEM_POST:
+            sem_post((int)a1);
+            return 0;
 
         default:
             serial_printf("SYSCALL: unknown %lu\n", nr);

@@ -22,4 +22,7 @@ int  fs_chdir(const char* path);
 int  fs_getcwd(char* buf, int max);
 long fs_ls_path(const char* path, char* buf, long max);
 
+void lock_stdout(void);
+void unlock_stdout(void);
+
 #endif

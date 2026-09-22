@@ -79,3 +79,11 @@ i64 sys_readdir(int fd, char* name, i64 max) {
 i64 sys_spawn(void) {
     return syscall3(SYS_SPAWN, 0, 0, 0);
 }
+
+i64 sys_sem_wait(int id) {
+    return syscall3(SYS_SEM_WAIT, id, 0, 0);
+}
+
+i64 sys_sem_post(int id) {
+    return syscall3(SYS_SEM_POST, id, 0, 0);
+}

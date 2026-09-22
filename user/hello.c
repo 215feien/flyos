@@ -3,10 +3,12 @@
 #include "syscall.h"
 
 void _start(void) {
-    for (int i = 0; i < 10; i++) {
+    for (int i = 0; i < 20; i++) {
+        lock_stdout();
         printf("[child] hello, i=%d\n", i);
-        sys_sleep(700);
+        unlock_stdout();
+        sys_sleep(300);
     }
-    puts("[child] done, exiting\n");
+    puts("[child] done\n");
     exit(0);
 }

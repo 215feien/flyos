@@ -24,6 +24,7 @@
 #include "panic.h"
 #include "gui.h"
 #include "term_window.h"
+#include "sem.h"
 
 extern void user_enter(void* entry, uint64_t user_stack_top);
 extern uint8_t _binary_user_init_elf_start[];
@@ -205,6 +206,8 @@ void kmain(uint32_t mb_info, uint32_t magic) {
     user_setup_stack();
 
     task_init();
+    sem_init_all();
+    sem_init(0, 1);      /* id 0 = 终端输出的互斥锁，初值 1 */
     task_create("user", user_task_entry);
 
     serial_printf("=== starting scheduler ===\n");

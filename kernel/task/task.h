@@ -25,6 +25,7 @@ struct task {
     uint64_t     stack_base;
     uint64_t     stack_size;
     uint64_t     kernel_stack_top;
+    uint64_t     saved_user_rsp;
     uint32_t     id;
     task_state_t state;
     const char*  name;

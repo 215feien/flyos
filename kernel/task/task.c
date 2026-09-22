@@ -4,6 +4,12 @@
 #include "gdt.h"
 #include <stdint.h>
 
+extern uint64_t saved_user_rsp;
+extern uint64_t kernel_rsp;
+
+static uint64_t get_saved_user_rsp(void) { return saved_user_rsp; }
+static void     set_saved_user_rsp(uint64_t v) { saved_user_rsp = v; }
+
 extern uint64_t kernel_rsp;
 static inline void set_kernel_rsp(uint64_t v) { kernel_rsp = v; }
 
@@ -39,6 +45,7 @@ void task_init(void) {
     current->name       = "kmain";
     current->next       = current;
     current->wq_next    = 0;
+    current->saved_user_rsp = 0;
     serial_printf("TASK: init, current = kmain\n");
 }
 
@@ -50,6 +57,7 @@ task_t* task_create(const char* name, void (*entry)(void)) {
     t->state      = TASK_READY;
     t->name       = name;
     t->wq_next    = 0;
+    t->saved_user_rsp = 0;
 
     uint64_t stack_top = t->stack_base + TASK_STACK_SIZE;
     stack_top &= ~0xFULL;
@@ -94,6 +102,10 @@ void schedule(void) {
         tss_set_rsp0(next->kernel_stack_top);
         set_kernel_rsp(next->kernel_stack_top);
     }
+
+    /* 保存当前任务的用户态 rsp，加载下一个任务的 */
+    prev->saved_user_rsp = get_saved_user_rsp();
+    set_saved_user_rsp(next->saved_user_rsp);
 
     task_switch(&prev->rsp, next->rsp);
 }

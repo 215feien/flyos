@@ -3,14 +3,29 @@
 #include "syscall.h"
 #include <stdarg.h>
 
-void putchar(char c) {
+/* ===== 不加锁的底层输出 ===== */
+static void raw_putchar(char c) {
     sys_write(1, &c, 1);
 }
 
-void puts(const char* s) {
+static void raw_puts(const char* s) {
     sys_write(1, s, (long)strlen(s));
 }
 
+/* ===== 带锁的对外接口 ===== */
+void putchar(char c) {
+    sys_sem_wait(0);
+    raw_putchar(c);
+    sys_sem_post(0);
+}
+
+void puts(const char* s) {
+    sys_sem_wait(0);
+    raw_puts(s);
+    sys_sem_post(0);
+}
+
+/* ===== printf 内部用 raw 版本，避免嵌套锁 ===== */
 static void print_uint(unsigned long v, int base, int width, char pad) {
     char buf[32];
     int i = 0;
@@ -21,12 +36,12 @@ static void print_uint(unsigned long v, int base, int width, char pad) {
         v /= (unsigned long)base;
     }
     while (i < width) buf[i++] = pad;
-    while (i > 0) putchar(buf[--i]);
+    while (i > 0) raw_putchar(buf[--i]);
 }
 
 static void print_int(long v, int width, char pad) {
     if (v < 0) {
-        putchar('-');
+        raw_putchar('-');
         print_uint((unsigned long)(-v), 10, width > 0 ? width - 1 : 0, pad);
     } else {
         print_uint((unsigned long)v, 10, width, pad);
@@ -38,7 +53,7 @@ int printf(const char* fmt, ...) {
     va_start(ap, fmt);
 
     for (const char* p = fmt; *p; p++) {
-        if (*p != '%') { putchar(*p); continue; }
+        if (*p != '%') { raw_putchar(*p); continue; }
         p++;
 
         char pad = ' ';
@@ -50,11 +65,11 @@ int printf(const char* fmt, ...) {
         if (*p == 'l') { is_long = 1; p++; if (*p == 'l') p++; }
 
         switch (*p) {
-            case 'c': putchar((char)va_arg(ap, int)); break;
+            case 'c': raw_putchar((char)va_arg(ap, int)); break;
             case 's': {
                 const char* s = va_arg(ap, const char*);
                 if (!s) s = "(null)";
-                puts(s);
+                raw_puts(s);
                 break;
             }
             case 'd':
@@ -78,14 +93,14 @@ int printf(const char* fmt, ...) {
             }
             case 'p': {
                 unsigned long v = (unsigned long)va_arg(ap, void*);
-                puts("0x");
+                raw_puts("0x");
                 print_uint(v, 16, 16, '0');
                 break;
             }
-            case '%': putchar('%'); break;
+            case '%': raw_putchar('%'); break;
             default:
-                putchar('%');
-                if (*p) putchar(*p);
+                raw_putchar('%');
+                if (*p) raw_putchar(*p);
                 break;
         }
     }
@@ -93,6 +108,7 @@ int printf(const char* fmt, ...) {
     return 0;
 }
 
+/* ===== 输入 ===== */
 char getchar(void) {
     char c;
     sys_read(0, &c, 1);
@@ -122,32 +138,25 @@ int readline(char* buf, int max) {
     }
 }
 
-#include "syscall.h"
-
+/* ===== 文件系统（不变） ===== */
 int fs_open(const char* name) {
     return (int)sys_open(name);
 }
-
 int fs_close(int fd) {
     return (int)sys_close(fd);
 }
-
 long fs_read(int fd, void* buf, long n) {
     return (long)sys_fread(fd, buf, n);
 }
-
 long fs_write(int fd, const void* buf, long n) {
     return (long)sys_fwrite(fd, buf, n);
 }
-
 long fs_ls(char* buf, long max) {
     return (long)sys_ls(buf, max);
 }
-
 int fs_unlink(const char* name) {
     return (int)sys_unlink(name);
 }
-
 int fs_sync(void) {
     return (int)sys_sync();
 }
@@ -155,15 +164,12 @@ int fs_sync(void) {
 int fs_mkdir(const char* path) {
     return (int)sys_mkdir(path);
 }
-
 int fs_chdir(const char* path) {
     return (int)sys_chdir(path);
 }
-
 int fs_getcwd(char* buf, int max) {
     return (int)sys_getcwd(buf, max);
 }
-
 long fs_ls_path(const char* path, char* buf, long max) {
     int fd = (int)sys_opendir(path);
     if (fd < 0) return -1;
@@ -180,4 +186,13 @@ long fs_ls_path(const char* path, char* buf, long max) {
     }
     sys_close(fd);
     return pos;
+}
+
+/* ===== 锁 ===== */
+void lock_stdout(void) {
+    sys_sem_wait(0);
+}
+
+void unlock_stdout(void) {
+    sys_sem_post(0);
 }
