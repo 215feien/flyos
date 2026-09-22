@@ -15,6 +15,7 @@
 #define MSR_FMASK  0xC0000084
 
 extern void syscall_entry(void);
+extern int kernel_spawn_child(void);
 
 static inline void wrmsr(uint32_t msr, uint64_t v) {
     uint32_t lo = (uint32_t)v;
@@ -138,6 +139,9 @@ uint64_t syscall_dispatch(uint64_t nr, uint64_t a1, uint64_t a2, uint64_t a3) {
             int max = (int)a3;
             return (uint64_t)(int64_t)dir_read((int)a1, name, max, 0);
         }
+
+        case SYS_SPAWN:
+            return (uint64_t)(int64_t)kernel_spawn_child();
 
         default:
             serial_printf("SYSCALL: unknown %lu\n", nr);

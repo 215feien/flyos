@@ -25,6 +25,7 @@ static void cmd_help(void) {
     puts("  rm <file>           remove file\n");
     puts("  sync                write fs to disk\n");
     puts("  sleep <ms>          sleep milliseconds\n");
+    puts("  spawn               launch child process\n");
     puts("  exit                quit shell\n");
 }
 
@@ -165,6 +166,10 @@ void _start(void) {
         }
         else if (strcmp(argv[0], "sync")   == 0) cmd_sync();
         else if (strcmp(argv[0], "sleep")  == 0) cmd_sleep(argc, argv);
+        else if (strcmp(argv[0], "spawn")  == 0) {
+            if (sys_spawn() == 0) puts("spawned child\n");
+            else puts("spawn failed\n");
+        }
         else if (strcmp(argv[0], "exit")   == 0) exit(0);
         else printf("unknown command: %s\n", argv[0]);
     }

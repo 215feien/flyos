@@ -22,5 +22,6 @@ uint64_t syscall_dispatch(uint64_t nr, uint64_t a1, uint64_t a2, uint64_t a3);
 #define SYS_GETCWD  14
 #define SYS_OPENDIR 15
 #define SYS_READDIR 16
+#define SYS_SPAWN   17
 
 #endif

@@ -80,9 +80,9 @@ uint64_t user_load_elf(const uint8_t* elf, uint64_t size) {
     return ehdr->e_entry;
 }
 
-void user_setup_stack(void) {
-    uint64_t first = USER_STACK_BASE;
-    uint64_t last  = USER_STACK_BASE + USER_STACK_SIZE;
+void user_setup_stack_at(uint64_t base, uint64_t size) {
+    uint64_t first = base;
+    uint64_t last  = base + size;
 
     for (uint64_t va = first; va < last; va += 0x1000) {
         uint64_t phys = pmm_alloc_page();
@@ -90,4 +90,8 @@ void user_setup_stack(void) {
         vmm_map(va, phys, VMM_WRITABLE | VMM_USER);
     }
     serial_printf("USER: stack mapped 0x%lx..0x%lx\n", first, last);
+}
+
+void user_setup_stack(void) {
+    user_setup_stack_at(USER_STACK_BASE, USER_STACK_SIZE);
 }

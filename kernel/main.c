@@ -28,6 +28,8 @@
 extern void user_enter(void* entry, uint64_t user_stack_top);
 extern uint8_t _binary_user_init_elf_start[];
 extern uint8_t _binary_user_init_elf_end[];
+extern uint8_t _binary_user_hello_elf_start[];
+extern uint8_t _binary_user_hello_elf_end[];
 
 static uint64_t user_entry_addr = 0;
 
@@ -90,6 +92,30 @@ static void user_task_entry(void) {
     serial_printf("[kernel] entering ring3 at 0x%lx\n", user_entry_addr);
     user_enter((void*)user_entry_addr, USER_STACK_BASE + USER_STACK_SIZE);
     for (;;) { __asm__ volatile ("hlt"); }
+}
+
+static int spawn_used = 0;
+
+static void child_task_entry(void) {
+    serial_printf("[kernel] child entering ring3 at 0x%lx\n", CHILD_CODE_BASE);
+    user_enter((void*)CHILD_CODE_BASE, CHILD_STACK_BASE + CHILD_STACK_SIZE);
+    for (;;) { __asm__ volatile ("hlt"); }
+}
+
+int kernel_spawn_child(void) {
+    if (spawn_used) return -1;
+    spawn_used = 1;
+
+    uint64_t sz = (uint64_t)(_binary_user_hello_elf_end - _binary_user_hello_elf_start);
+    uint64_t entry = user_load_elf(_binary_user_hello_elf_start, sz);
+    if (!entry) {
+        serial_printf("SPAWN: load failed\n");
+        return -1;
+    }
+    user_setup_stack_at(CHILD_STACK_BASE, CHILD_STACK_SIZE);
+    task_create("child", child_task_entry);
+    serial_printf("SPAWN: child task created (entry=0x%lx)\n", entry);
+    return 0;
 }
 
 void kmain(uint32_t mb_info, uint32_t magic) {
