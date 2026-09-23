@@ -26,6 +26,7 @@ struct task {
     uint64_t     stack_size;
     uint64_t     kernel_stack_top;
     uint64_t     saved_user_rsp;
+    uint64_t     pml4_phys;         /* 新增：本任务的 PML4 物理地址，0 = 用当前 CR3 */
     uint32_t     id;
     task_state_t state;
     const char*  name;

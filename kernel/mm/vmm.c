@@ -121,3 +121,24 @@ void vmm_page_fault_handler(struct regs* r) {
         __asm__ volatile ("hlt");
     }
 }
+
+uint64_t vmm_current_pml4(void) {
+    return read_cr3() & ADDR_MASK;
+}
+
+uint64_t vmm_clone_pml4(void) {
+    uint64_t old_phys = read_cr3() & ADDR_MASK;
+    uint64_t new_phys = pmm_alloc_page();
+    if (!new_phys) return 0;
+
+    uint64_t* old_pml4 = (uint64_t*)(uintptr_t)old_phys;
+    uint64_t* new_pml4 = (uint64_t*)(uintptr_t)new_phys;
+
+    /* 完整复制 512 项：内核部分（PML4[256+]）和用户部分暂时共享下级页表 */
+    for (int i = 0; i < 512; i++) {
+        new_pml4[i] = old_pml4[i];
+    }
+
+    serial_printf("VMM: cloned PML4 0x%lx -> 0x%lx\n", old_phys, new_phys);
+    return new_phys;
+}

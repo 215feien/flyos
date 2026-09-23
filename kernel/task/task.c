@@ -31,6 +31,10 @@ static uint64_t  global_tick = 0;
 
 extern void task_switch(uint64_t* old_rsp_ptr, uint64_t new_rsp);
 
+static inline void write_cr3(uint64_t v) {
+    __asm__ volatile ("mov %0, %%cr3" : : "r"(v) : "memory");
+}
+
 void task_init(void) {
     for (int i = 0; i < MAX_SLEEPERS; i++) sleepers[i].used = 0;
     global_tick = 0;
@@ -46,6 +50,7 @@ void task_init(void) {
     current->next       = current;
     current->wq_next    = 0;
     current->saved_user_rsp = 0;
+    current->pml4_phys = 0;   /* kmain 用当前 CR3 */
     serial_printf("TASK: init, current = kmain\n");
 }
 
@@ -58,6 +63,7 @@ task_t* task_create(const char* name, void (*entry)(void)) {
     t->name       = name;
     t->wq_next    = 0;
     t->saved_user_rsp = 0;
+    t->pml4_phys = 0;   /* 默认共享当前页表 */
 
     uint64_t stack_top = t->stack_base + TASK_STACK_SIZE;
     stack_top &= ~0xFULL;
