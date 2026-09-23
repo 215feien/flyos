@@ -24,6 +24,8 @@ typedef long i64;
 #define SYS_SEM_POST 19
 #define SYS_EXEC    20
 #define SYS_FORK    21
+#define SYS_FAT_LS    22
+#define SYS_FAT_READ  23
 
 i64  sys_write (int fd, const void* buf, i64 n);
 i64  sys_read  (int fd, void* buf,       i64 n);
@@ -46,5 +48,7 @@ i64 sys_sem_wait(int id);
 i64 sys_sem_post(int id);
 i64 sys_exec(void);
 i64 sys_fork(void);
+i64 sys_fat_ls(char* buf, i64 max);
+i64 sys_fat_read(const char* name, void* buf, i64 max);
 
 #endif

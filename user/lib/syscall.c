@@ -94,3 +94,11 @@ i64 sys_exec(void) {
 i64 sys_fork(void) {
     return syscall3(SYS_FORK, 0, 0, 0);
 }
+
+i64 sys_fat_ls(char* buf, i64 max) {
+    return syscall3(SYS_FAT_LS, (i64)buf, max, 0);
+}
+
+i64 sys_fat_read(const char* name, void* buf, i64 max) {
+    return syscall3(SYS_FAT_READ, (i64)name, (i64)buf, max);
+}

@@ -27,5 +27,7 @@ uint64_t syscall_dispatch(uint64_t nr, uint64_t a1, uint64_t a2, uint64_t a3);
 #define SYS_SEM_POST 19
 #define SYS_EXEC    20
 #define SYS_FORK    21
+#define SYS_FAT_LS    22
+#define SYS_FAT_READ  23
 
 #endif

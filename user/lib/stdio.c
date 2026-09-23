@@ -196,3 +196,11 @@ void lock_stdout(void) {
 void unlock_stdout(void) {
     sys_sem_post(0);
 }
+
+long fs_fat_ls(char* buf, long max) {
+    return (long)sys_fat_ls(buf, max);
+}
+
+long fs_fat_read(const char* name, void* buf, long max) {
+    return (long)sys_fat_read(name, buf, max);
+}

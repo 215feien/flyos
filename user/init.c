@@ -29,6 +29,8 @@ static void cmd_help(void) {
     puts("  fork                spawn a child process\n");
     puts("  exit                quit shell\n");
     puts("  exec                replace this process with hello\n");
+    puts("  fatls               list FAT16 root\n");
+    puts("  fatcat <file>       print FAT16 file\n");
 }
 
 static void cmd_printf_demo(void) {
@@ -74,6 +76,21 @@ static void cmd_cat(const char* name) {
         for (long i = 0; i < n; i++) putchar(buf[i]);
     }
     fs_close(fd);
+}
+
+static void cmd_fatls(void) {
+    static char buf[2048];
+    long n = fs_fat_ls(buf, sizeof(buf));
+    if (n <= 0) { puts("(empty)\n"); return; }
+    for (long i = 0; i < n; i++) putchar(buf[i]);
+}
+
+static void cmd_fatcat(const char* name) {
+    char buf[512];
+    long n = fs_fat_read(name, buf, sizeof(buf));
+    if (n < 0) { printf("fatcat: %s not found\n", name); return; }
+    for (long i = 0; i < n; i++) putchar(buf[i]);
+    putchar('\n');
 }
 
 static void cmd_write(int argc, char* argv[]) {
@@ -182,6 +199,11 @@ void _start(void) {
             sys_exec();
             /* 如果 exec 成功，不会返回这里 */
             puts("exec failed\n");
+        }
+        else if (strcmp(argv[0], "fatls")  == 0) cmd_fatls();
+        else if (strcmp(argv[0], "fatcat") == 0) {
+            if (argc < 2) puts("usage: fatcat <file>\n");
+            else cmd_fatcat(argv[1]);
         }
         else printf("unknown command: %s\n", argv[0]);
     }

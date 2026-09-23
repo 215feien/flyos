@@ -15,6 +15,8 @@ long fs_write(int fd, const void* buf, long n);
 long fs_ls(char* buf, long max);
 int  fs_unlink(const char* name);
 int  fs_sync(void);
+long fs_fat_ls(char* buf, long max);
+long fs_fat_read(const char* name, void* buf, long max);
 
 /* 目录 */
 int  fs_mkdir(const char* path);

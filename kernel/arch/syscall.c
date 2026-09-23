@@ -9,6 +9,7 @@
 #include "fb_term.h"
 #include "sem.h"
 #include "user.h"
+#include "fat16.h"
 #include <stdint.h>
 
 #define MSR_EFER   0xC0000080
@@ -71,7 +72,7 @@ uint64_t syscall_dispatch(uint64_t nr, uint64_t a1, uint64_t a2, uint64_t a3) {
 
         case SYS_EXIT:
             serial_printf("\nSYSCALL: exit(%lu)\n", a1);
-            persist_save();
+            //persist_save();
             for (;;) __asm__ volatile ("cli; hlt");
 
         case SYS_OPEN:
@@ -181,6 +182,13 @@ uint64_t syscall_dispatch(uint64_t nr, uint64_t a1, uint64_t a2, uint64_t a3) {
             serial_printf("EXEC: jumping to 0x%lx\n", entry);
             return 0;
         }
+
+        case SYS_FAT_LS:
+            return (uint64_t)(int64_t)fat16_list_root((char*)a1, (int)a2);
+
+        case SYS_FAT_READ:
+            return (uint64_t)(int64_t)fat16_read_file((const char*)a1,
+                                                       (void*)a2, (int)a3);
 
         default:
             serial_printf("SYSCALL: unknown %lu\n", nr);

@@ -50,7 +50,8 @@ all: $(ISO)
 
 $(DISK):
 	dd if=/dev/zero of=$(DISK) bs=1M count=16 2>/dev/null
-
+	mkfs.fat -F 16 $(DISK)
+	
 user/%.o: user/%.c
 	$(CC) $(USER_CFLAGS) -c $< -o $@
 

@@ -26,6 +26,7 @@
 #include "term_window.h"
 #include "sem.h"
 #include "vmm.h"
+#include "fat16.h"
 
 extern void user_enter(void* entry, uint64_t user_stack_top);
 extern uint8_t _binary_user_init_elf_start[];
@@ -151,6 +152,18 @@ void kmain(uint32_t mb_info, uint32_t magic) {
     ramfs_init();
     file_init();
     persist_load();
+
+    fat16_init(0);        /* 磁盘从 LBA 0 开始当 FAT16 */
+
+    serial_printf("=== FAT16 test ===\n");
+    static char fatbuf[1024];
+    int fatn = fat16_list_root(fatbuf, sizeof(fatbuf));
+    if (fatn > 0) {
+        serial_printf("FAT16 root:\n");
+        for (int i = 0; i < fatn; i++) serial_putc(fatbuf[i]);
+    } else {
+        serial_printf("FAT16 root: (empty)\n");
+    }
 
     mouse_init();
     fb_cursor_init();
