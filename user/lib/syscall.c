@@ -87,3 +87,6 @@ i64 sys_sem_wait(int id) {
 i64 sys_sem_post(int id) {
     return syscall3(SYS_SEM_POST, id, 0, 0);
 }
+i64 sys_exec(void) {
+    return syscall3(SYS_EXEC, 0, 0, 0);
+}

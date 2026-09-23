@@ -27,6 +27,7 @@ static void cmd_help(void) {
     puts("  sleep <ms>          sleep milliseconds\n");
     puts("  spawn               launch child process\n");
     puts("  exit                quit shell\n");
+    puts("  exec                replace this process with hello\n");
 }
 
 static void cmd_printf_demo(void) {
@@ -171,6 +172,11 @@ void _start(void) {
             else puts("spawn failed\n");
         }
         else if (strcmp(argv[0], "exit")   == 0) exit(0);
+        else if (strcmp(argv[0], "exec")   == 0) {
+            sys_exec();
+            /* 如果 exec 成功，不会返回这里 */
+            puts("exec failed\n");
+        }
         else printf("unknown command: %s\n", argv[0]);
     }
 }

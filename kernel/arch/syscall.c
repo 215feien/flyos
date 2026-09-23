@@ -8,6 +8,7 @@
 #include "task.h"
 #include "fb_term.h"
 #include "sem.h"
+#include "user.h"
 #include <stdint.h>
 
 #define MSR_EFER   0xC0000080
@@ -17,6 +18,10 @@
 
 extern void syscall_entry(void);
 extern int kernel_spawn_child(void);
+extern uint64_t user_return_rip;
+extern uint64_t user_return_rsp;
+extern uint8_t _binary_user_hello_elf_start[];
+extern uint8_t _binary_user_hello_elf_end[];
 
 static inline void wrmsr(uint32_t msr, uint64_t v) {
     uint32_t lo = (uint32_t)v;
@@ -151,6 +156,20 @@ uint64_t syscall_dispatch(uint64_t nr, uint64_t a1, uint64_t a2, uint64_t a3) {
         case SYS_SEM_POST:
             sem_post((int)a1);
             return 0;
+
+        case SYS_EXEC: {
+            uint64_t sz = (uint64_t)(_binary_user_hello_elf_end -
+                                      _binary_user_hello_elf_start);
+            uint64_t entry = user_load_elf(_binary_user_hello_elf_start, sz);
+            if (!entry) return (uint64_t)-1;
+
+            user_setup_stack_at(CHILD_STACK_BASE, CHILD_STACK_SIZE);
+
+            user_return_rip = entry;
+            user_return_rsp = CHILD_STACK_BASE + CHILD_STACK_SIZE;
+            serial_printf("EXEC: jumping to 0x%lx\n", entry);
+            return 0;
+        }
 
         default:
             serial_printf("SYSCALL: unknown %lu\n", nr);

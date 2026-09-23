@@ -25,5 +25,6 @@ uint64_t syscall_dispatch(uint64_t nr, uint64_t a1, uint64_t a2, uint64_t a3);
 #define SYS_SPAWN   17
 #define SYS_SEM_WAIT 18
 #define SYS_SEM_POST 19
+#define SYS_EXEC    20
 
 #endif
