@@ -142,3 +142,82 @@ uint64_t vmm_clone_pml4(void) {
     serial_printf("VMM: cloned PML4 0x%lx -> 0x%lx\n", old_phys, new_phys);
     return new_phys;
 }
+
+/* 深拷贝：复制用户空间（低半区）的 PDPT/PD/PT，并复制物理页内容 */
+static uint64_t copy_page(uint64_t src_phys) {
+    uint64_t dst_phys = pmm_alloc_page();
+    if (!dst_phys) return 0;
+    uint8_t* dst = (uint8_t*)(uintptr_t)dst_phys;
+    uint8_t* src = (uint8_t*)(uintptr_t)src_phys;
+    for (int i = 0; i < 4096; i++) dst[i] = src[i];
+    return dst_phys;
+}
+
+/* 只克隆低半区（用户空间），高半区（内核）共享 */
+uint64_t vmm_clone_pml4_deep(uint64_t src_pml4_phys) {
+    uint64_t dst_pml4_phys = pmm_alloc_page();
+    if (!dst_pml4_phys) return 0;
+
+    uint64_t* src_pml4 = (uint64_t*)(uintptr_t)src_pml4_phys;
+    uint64_t* dst_pml4 = (uint64_t*)(uintptr_t)dst_pml4_phys;
+
+    for (int i = 0; i < 512; i++) {
+        /* 高半区内核空间：共享 */
+        if (i >= 256) {
+            dst_pml4[i] = src_pml4[i];
+            continue;
+        }
+        /* 低半区用户空间：深拷贝 */
+        if (!(src_pml4[i] & VMM_PRESENT)) {
+            dst_pml4[i] = 0;
+            continue;
+        }
+        uint64_t src_pdpt_phys = src_pml4[i] & ADDR_MASK;
+        uint64_t dst_pdpt_phys = pmm_alloc_page();
+        if (!dst_pdpt_phys) return 0;
+
+        uint64_t* src_pdpt = (uint64_t*)(uintptr_t)src_pdpt_phys;
+        uint64_t* dst_pdpt = (uint64_t*)(uintptr_t)dst_pdpt_phys;
+        dst_pml4[i] = dst_pdpt_phys | (src_pml4[i] & 0xFFF);
+
+        for (int j = 0; j < 512; j++) {
+            if (!(src_pdpt[j] & VMM_PRESENT)) { dst_pdpt[j] = 0; continue; }
+
+            uint64_t src_pd_phys = src_pdpt[j] & ADDR_MASK;
+            uint64_t dst_pd_phys = pmm_alloc_page();
+            if (!dst_pd_phys) return 0;
+
+            uint64_t* src_pd = (uint64_t*)(uintptr_t)src_pd_phys;
+            uint64_t* dst_pd = (uint64_t*)(uintptr_t)dst_pd_phys;
+            dst_pdpt[j] = dst_pd_phys | (src_pdpt[j] & 0xFFF);
+
+            for (int k = 0; k < 512; k++) {
+                if (!(src_pd[k] & VMM_PRESENT)) { dst_pd[k] = 0; continue; }
+                /* 2MB 大页：暂不深拷贝，直接共享（内核恒等映射会走这里） */
+                if (src_pd[k] & VMM_HUGE) {
+                    dst_pd[k] = src_pd[k];
+                    continue;
+                }
+                uint64_t src_pt_phys = src_pd[k] & ADDR_MASK;
+                uint64_t dst_pt_phys = pmm_alloc_page();
+                if (!dst_pt_phys) return 0;
+
+                uint64_t* src_pt = (uint64_t*)(uintptr_t)src_pt_phys;
+                uint64_t* dst_pt = (uint64_t*)(uintptr_t)dst_pt_phys;
+                dst_pd[k] = dst_pt_phys | (src_pd[k] & 0xFFF);
+
+                for (int l = 0; l < 512; l++) {
+                    if (!(src_pt[l] & VMM_PRESENT)) { dst_pt[l] = 0; continue; }
+                    uint64_t src_frame = src_pt[l] & ADDR_MASK;
+                    uint64_t dst_frame = copy_page(src_frame);
+                    if (!dst_frame) return 0;
+                    dst_pt[l] = dst_frame | (src_pt[l] & 0xFFF);
+                }
+            }
+        }
+    }
+
+    serial_printf("VMM: deep-cloned PML4 0x%lx -> 0x%lx\n",
+                  src_pml4_phys, dst_pml4_phys);
+    return dst_pml4_phys;
+}

@@ -17,5 +17,6 @@ uint64_t vmm_get_phys(uint64_t virt);
 void     vmm_page_fault_handler(struct regs* r);
 uint64_t vmm_clone_pml4(void);
 uint64_t vmm_current_pml4(void);
+uint64_t vmm_clone_pml4_deep(uint64_t src_pml4_phys);
 
 #endif

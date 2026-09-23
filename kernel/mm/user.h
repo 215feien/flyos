@@ -13,5 +13,6 @@
 uint64_t user_load_elf(const uint8_t* elf, uint64_t size);
 void     user_setup_stack(void);
 void     user_setup_stack_at(uint64_t base, uint64_t size);
+uint64_t user_fork_space(uint64_t parent_pml4_phys);
 
 #endif

@@ -95,3 +95,8 @@ void user_setup_stack_at(uint64_t base, uint64_t size) {
 void user_setup_stack(void) {
     user_setup_stack_at(USER_STACK_BASE, USER_STACK_SIZE);
 }
+
+uint64_t user_fork_space(uint64_t parent_pml4_phys) {
+    uint64_t child_pml4 = vmm_clone_pml4_deep(parent_pml4_phys);
+    return child_pml4;
+}
