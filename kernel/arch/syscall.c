@@ -97,11 +97,14 @@ uint64_t syscall_dispatch(uint64_t nr, uint64_t a1, uint64_t a2, uint64_t a3) {
             uint64_t max = a2;
             uint64_t pos = 0;
             ramfs_node_t* dir = ramfs_cwd();
+            serial_printf("LS: cwd=0x%lx '%s', children=0x%lx\n",
+                          (uint64_t)dir, dir ? dir->name : "(null)",
+                          dir ? (uint64_t)dir->children : 0);
             for (ramfs_node_t* c = dir->children; c; c = c->next) {
+                serial_printf("LS: child '%s'\n", c->name);
                 const char* nm = c->name;
                 uint64_t l = 0;
                 while (nm[l]) l++;
-                /* 目录后加 '/' */
                 uint64_t extra = (c->type == NODE_DIR) ? 1 : 0;
                 if (pos + l + extra + 1 > max) break;
                 for (uint64_t i = 0; i < l; i++) buf[pos++] = nm[i];
@@ -110,7 +113,7 @@ uint64_t syscall_dispatch(uint64_t nr, uint64_t a1, uint64_t a2, uint64_t a3) {
             }
             return pos;
         }
-
+        
         case SYS_SYNC:
             return (uint64_t)persist_save();
 
@@ -119,7 +122,12 @@ uint64_t syscall_dispatch(uint64_t nr, uint64_t a1, uint64_t a2, uint64_t a3) {
             return 0;
 
         case SYS_MKDIR: {
-            ramfs_node_t* n = ramfs_mkdir(ramfs_cwd(), (const char*)a1);
+            ramfs_node_t* cwd0 = ramfs_cwd();
+            serial_printf("MKDIR: cwd=0x%lx '%s'\n",
+                          (uint64_t)cwd0, cwd0 ? cwd0->name : "(null)");
+            ramfs_node_t* n = ramfs_mkdir(cwd0, (const char*)a1);
+            serial_printf("MKDIR: node=0x%lx, children now=0x%lx\n",
+                          (uint64_t)n, cwd0 ? (uint64_t)cwd0->children : 0);
             return n ? 0 : (uint64_t)(int64_t)-1;
         }
 
