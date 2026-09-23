@@ -165,6 +165,9 @@ uint64_t syscall_dispatch(uint64_t nr, uint64_t a1, uint64_t a2, uint64_t a3) {
             sem_post((int)a1);
             return 0;
 
+        case SYS_FORK:
+            return (uint64_t)(int64_t)kernel_spawn_child();
+
         case SYS_EXEC: {
             uint64_t sz = (uint64_t)(_binary_user_hello_elf_end -
                                       _binary_user_hello_elf_start);

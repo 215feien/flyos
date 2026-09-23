@@ -115,9 +115,9 @@ int kernel_spawn_child(void) {
         return -1;
     }
     user_setup_stack_at(CHILD_STACK_BASE, CHILD_STACK_SIZE);
-    task_create("child", child_task_entry);
-    serial_printf("SPAWN: child task created (entry=0x%lx)\n", entry);
-    return 0;
+    task_t* t = task_create("child", child_task_entry);
+    serial_printf("SPAWN: child task created (entry=0x%lx) id=%u\n", entry, t->id);
+    return (int)t->id;
 }
 
 void kmain(uint32_t mb_info, uint32_t magic) {

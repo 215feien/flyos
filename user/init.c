@@ -26,6 +26,7 @@ static void cmd_help(void) {
     puts("  sync                write fs to disk\n");
     puts("  sleep <ms>          sleep milliseconds\n");
     puts("  spawn               launch child process\n");
+    puts("  fork                spawn a child process\n");
     puts("  exit                quit shell\n");
     puts("  exec                replace this process with hello\n");
 }
@@ -170,6 +171,11 @@ void _start(void) {
         else if (strcmp(argv[0], "spawn")  == 0) {
             if (sys_spawn() == 0) puts("spawned child\n");
             else puts("spawn failed\n");
+        }
+        else if (strcmp(argv[0], "fork")   == 0) {
+            i64 pid = sys_fork();
+            if (pid > 0) printf("forked child pid=%ld\n", (long)pid);
+            else puts("fork failed\n");
         }
         else if (strcmp(argv[0], "exit")   == 0) exit(0);
         else if (strcmp(argv[0], "exec")   == 0) {

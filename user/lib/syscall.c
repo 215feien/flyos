@@ -90,3 +90,7 @@ i64 sys_sem_post(int id) {
 i64 sys_exec(void) {
     return syscall3(SYS_EXEC, 0, 0, 0);
 }
+
+i64 sys_fork(void) {
+    return syscall3(SYS_FORK, 0, 0, 0);
+}
