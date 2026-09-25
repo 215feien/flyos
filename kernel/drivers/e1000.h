@@ -17,4 +17,18 @@ void e1000_ping(uint32_t dst_ip_be);
 void e1000_dns_query(const char* hostname);
 int  e1000_dns_parse_reply(const uint8_t* dns, int len, uint8_t out_ip[4]);
 
+void e1000_tcp_syn(uint32_t dst_ip_be, uint16_t dst_port);
+
+typedef struct {
+    uint32_t src_ip;
+    uint16_t src_port;
+    uint32_t seq;
+    uint32_t ack;
+    uint16_t flags;
+} tcp_reply_t;
+
+int e1000_tcp_parse_reply(const uint8_t* tcp, int len,
+                          uint32_t src_ip_be, uint32_t dst_ip_be,
+                          tcp_reply_t* out);
+
 #endif

@@ -128,7 +128,9 @@ static void user_task_entry(void) {
 static void net_test(void) {
     serial_printf("=== NET test ===\n");
 
-    /* 1. ARP */
+    uint32_t dns_result = 0;   /* 跨段保存 DNS 解析结果 */
+
+    /* ===== 1. ARP ===== */
     e1000_send_arp_request();
     for (volatile uint64_t i = 0; i < 100000000ULL; i++);
 
@@ -136,7 +138,8 @@ static void net_test(void) {
     for (int tries = 0; tries < 30; tries++) {
         uint8_t pkt[2048];
         int n = e1000_recv(pkt, sizeof(pkt));
-        if (n >= 42 && pkt[12] == 0x08 && pkt[13] == 0x06 && pkt[20] == 0x00 && pkt[21] == 0x02) {
+        if (n >= 42 && pkt[12] == 0x08 && pkt[13] == 0x06 &&
+            pkt[20] == 0x00 && pkt[21] == 0x02) {
             for (int i = 0; i < 6; i++) gateway_mac[i] = pkt[6 + i];
             serial_printf("ARP: gateway MAC = %02x:%02x:%02x:%02x:%02x:%02x\n",
                           gateway_mac[0], gateway_mac[1], gateway_mac[2],
@@ -148,7 +151,7 @@ static void net_test(void) {
     }
     if (!got_arp) { serial_printf("ARP: no reply\n"); return; }
 
-    /* 2. ICMP */
+    /* ===== 2. ICMP ===== */
     e1000_ping(0x0A000202);
     for (volatile uint64_t i = 0; i < 100000000ULL; i++);
 
@@ -163,7 +166,7 @@ static void net_test(void) {
         for (volatile int i = 0; i < 20000000; i++);
     }
 
-    /* 3. DNS */
+    /* ===== 3. DNS ===== */
     e1000_dns_query("example.com");
     for (volatile uint64_t i = 0; i < 100000000ULL; i++);
 
@@ -171,18 +174,17 @@ static void net_test(void) {
         uint8_t pkt[2048];
         int n = e1000_recv(pkt, sizeof(pkt));
         if (n < 42) continue;
-        /* 检查是 UDP，端口 53，发给 12345 */
         if (pkt[12] == 0x08 && pkt[13] == 0x00 && pkt[23] == 0x11 &&
             pkt[34] == 0x00 && pkt[35] == 0x35 &&
             pkt[36] == 0x30 && pkt[37] == 0x39) {
             serial_printf("DNS: got reply %d bytes\n", n);
-
-            /* DNS 载荷从偏移 42 开始 */
             uint8_t ip[4];
             if (e1000_dns_parse_reply(pkt + 42, n - 42, ip) == 0) {
+                dns_result = ((uint32_t)ip[0] << 24) | ((uint32_t)ip[1] << 16)
+                           | ((uint32_t)ip[2] << 8)  |  (uint32_t)ip[3];
                 serial_printf("DNS: example.com = %u.%u.%u.%u\n",
                               ip[0], ip[1], ip[2], ip[3]);
-                return;
+                break;
             } else {
                 serial_printf("DNS: parse failed\n");
             }
@@ -190,7 +192,40 @@ static void net_test(void) {
         }
         for (volatile int i = 0; i < 20000000; i++);
     }
-    serial_printf("DNS: no reply\n");
+
+    /* ===== 4. TCP SYN ===== */
+    uint32_t tcp_dst = dns_result ? dns_result : 0x0A000202;
+
+    serial_printf("=== TCP test ===\n");
+    serial_printf("TCP: target = %u.%u.%u.%u\n",
+                  (tcp_dst >> 24) & 0xFF, (tcp_dst >> 16) & 0xFF,
+                  (tcp_dst >> 8) & 0xFF, tcp_dst & 0xFF);
+
+    e1000_tcp_syn(tcp_dst, 80);
+    for (volatile uint64_t i = 0; i < 100000000ULL; i++);
+
+    for (int tries = 0; tries < 30; tries++) {
+        uint8_t pkt[2048];
+        int n = e1000_recv(pkt, sizeof(pkt));
+        if (n >= 54 && pkt[12] == 0x08 && pkt[13] == 0x00 && pkt[23] == 0x06) {
+            serial_printf("TCP: got TCP packet %d bytes\n", n);
+
+            tcp_reply_t r;
+            if (e1000_tcp_parse_reply(pkt + 34, n - 34, 0, 0, &r) == 0) {
+                serial_printf("TCP: src_port=%u seq=0x%08x ack=0x%08x flags=0x%04x\n",
+                              r.src_port, r.seq, r.ack, r.flags);
+
+                if (r.flags & 0x0012) {
+                    serial_printf("TCP: SYN-ACK received!  <-- 握手第一步成功\n");
+                } else if (r.flags & 0x0004) {
+                    serial_printf("TCP: RST (端口关闭)\n");
+                }
+            }
+            break;
+        }
+        for (volatile int i = 0; i < 20000000; i++);
+    }
+    serial_printf("TCP: done\n");
 }
 
 void kmain(uint32_t mb_info, uint32_t magic) {

@@ -486,5 +486,102 @@ int e1000_dns_parse_reply(const uint8_t* dns, int len, uint8_t out_ip[4]) {
     return -1;
 }
 
+/* ===== TCP 校验和：需要伪头部 ===== */
+static uint16_t tcp_checksum(uint32_t src_ip, uint32_t dst_ip,
+                             const uint8_t* tcp, int tcp_len)
+{
+    uint32_t sum = 0;
+    /* 伪头部：src + dst + zero + proto + length */
+    sum += (src_ip >> 16) & 0xFFFF;
+    sum +=  src_ip        & 0xFFFF;
+    sum += (dst_ip >> 16) & 0xFFFF;
+    sum +=  dst_ip        & 0xFFFF;
+    sum += 0x0006;             /* protocol = TCP */
+    sum += (uint16_t)tcp_len;
+
+    /* TCP 段本身（按 big-endian 逐 16 位） */
+    for (int i = 0; i + 1 < tcp_len; i += 2) {
+        sum += ((uint16_t)tcp[i] << 8) | tcp[i + 1];
+    }
+    if (tcp_len & 1) sum += ((uint16_t)tcp[tcp_len - 1] << 8);
+
+    while (sum >> 16) sum = (sum & 0xFFFF) + (sum >> 16);
+    return (uint16_t)~sum;
+}
+
+/* ===== 发送 TCP SYN ===== */
+void e1000_tcp_syn(uint32_t dst_ip_be, uint16_t dst_port) {
+    int total = 14 + 20 + 20;   /* Eth + IP + TCP，无 payload */
+    uint8_t pkt[64];
+    for (int i = 0; i < total; i++) pkt[i] = 0;
+
+    /* --- Ethernet --- */
+    for (int i = 0; i < 6; i++) pkt[i] = gateway_mac[i];
+    for (int i = 0; i < 6; i++) pkt[6 + i] = mac[i];
+    pkt[12] = 0x08; pkt[13] = 0x00;
+
+    /* --- IP --- */
+    uint32_t src_ip = 0x0A00020F;   /* 10.0.2.15 */
+    int ip_total = 20 + 20;
+    pkt[14] = 0x45;
+    pkt[15] = 0x00;
+    pkt[16] = (ip_total >> 8) & 0xFF;
+    pkt[17] = ip_total & 0xFF;
+    pkt[18] = 0x00; pkt[19] = 0x03;   /* ID */
+    pkt[20] = 0x00; pkt[21] = 0x00;
+    pkt[22] = 64;
+    pkt[23] = 0x06;                    /* TCP = 6 */
+    pkt[26] = 10; pkt[27] = 0; pkt[28] = 2; pkt[29] = 15;
+    pkt[30] = (dst_ip_be >> 24) & 0xFF;
+    pkt[31] = (dst_ip_be >> 16) & 0xFF;
+    pkt[32] = (dst_ip_be >> 8)  & 0xFF;
+    pkt[33] =  dst_ip_be        & 0xFF;
+    uint16_t ips = ip_checksum(pkt + 14, 20);
+    pkt[24] = (ips >> 8) & 0xFF;
+    pkt[25] =  ips       & 0xFF;
+
+    /* --- TCP --- */
+    uint16_t src_port = 40000;
+    uint32_t seq = 0x12345678;
+    uint8_t* tcp = pkt + 34;
+    tcp[0] = (src_port >> 8) & 0xFF;
+    tcp[1] =  src_port       & 0xFF;
+    tcp[2] = (dst_port >> 8) & 0xFF;
+    tcp[3] =  dst_port       & 0xFF;
+    tcp[4] = (seq >> 24) & 0xFF;
+    tcp[5] = (seq >> 16) & 0xFF;
+    tcp[6] = (seq >> 8)  & 0xFF;
+    tcp[7] =  seq        & 0xFF;
+    /* ack = 0 */
+    tcp[12] = 0x50;     /* data offset = 5 (20 字节头) */
+    tcp[13] = 0x02;     /* SYN */
+    tcp[14] = 0x10; tcp[15] = 0x00;   /* window = 4096 */
+    /* checksum 在 16-17 */
+    /* urgent = 0 */
+
+    uint16_t tcs = tcp_checksum(src_ip, dst_ip_be, tcp, 20);
+    tcp[16] = (tcs >> 8) & 0xFF;
+    tcp[17] =  tcs       & 0xFF;
+
+    serial_printf("TCP: sending SYN to 10.0.2.%u:%u seq=0x%08x\n",
+                  dst_ip_be & 0xFF, dst_port, seq);
+    e1000_send(pkt, total);
+}
+
+/* ===== 解析 TCP 应答 ===== */
+int e1000_tcp_parse_reply(const uint8_t* tcp, int len,
+                          uint32_t src_ip_be, uint32_t dst_ip_be,
+                          tcp_reply_t* out)
+{
+    (void)src_ip_be; (void)dst_ip_be;
+    if (len < 20) return -1;
+
+    out->src_port = (tcp[0] << 8) | tcp[1];
+    out->ack      = (tcp[8] << 24) | (tcp[9] << 16) | (tcp[10] << 8) | tcp[11];
+    out->seq      = (tcp[4] << 24) | (tcp[5] << 16) | (tcp[6] << 8) | tcp[7];
+    out->flags    = ((uint16_t)tcp[12] << 8) | tcp[13];
+    return 0;
+}
+
 uint32_t e1000_debug_rdh(void) { return e1000_read(E1000_RDH); }
 uint32_t e1000_debug_rdt(void) { return e1000_read(E1000_RDT); }
