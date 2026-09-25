@@ -87,6 +87,12 @@ static void demo_click(window_t* w, int mx, int my) {
     }
 }
 
+static void demo_close(window_t* w) {
+    (void)w;
+    serial_printf("GUI: counter demo closing\n");
+    /* 实际移除由 gui_remove_window 处理 */
+}
+
 /* ===== 子进程 ===== */
 static int spawn_used = 0;
 
@@ -320,6 +326,7 @@ void kmain(uint32_t mb_info, uint32_t magic) {
                                  fb_rgb(255, 255, 255));
     demo_win.on_draw  = demo_draw;
     demo_win.on_click = demo_click;
+    demo_win.on_close = demo_close;
     gui_add_window(&demo_win);
 
     term_win.focused = 1;

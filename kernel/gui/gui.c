@@ -28,9 +28,27 @@ void gui_add_window(window_t* win) {
     windows[window_count++] = win;
 }
 
-/* 把 win 移到数组末尾（最上层） */
+void gui_remove_window(window_t* win) {
+    int idx = -1;
+    for (int i = 0; i < window_count; i++) {
+        if (windows[i] == win) { idx = i; break; }
+    }
+    if (idx < 0) return;
+    for (int i = idx; i < window_count - 1; i++) {
+        windows[i] = windows[i + 1];
+    }
+    window_count--;
+    if (focus == win) {
+        focus = (window_count > 0) ? windows[window_count - 1] : 0;
+        if (focus) focus->focused = 1;
+    }
+    if (drag_win == win) drag_win = 0;
+}
+
 static void bring_to_front(window_t* win) {
+    if (window_count == 0) return;
     if (win == windows[window_count - 1]) return;
+
     int idx = -1;
     for (int i = 0; i < window_count; i++) {
         if (windows[i] == win) { idx = i; break; }
@@ -45,15 +63,20 @@ static void bring_to_front(window_t* win) {
 void gui_redraw(void) {
     fb_cursor_hide();
     fb_clear(fb_rgb(20, 20, 40));
+
     for (int i = 0; i < window_count; i++) {
-        window_draw(windows[i]);
+        if (windows[i]->visible) {
+            windows[i]->focused = (windows[i] == focus);
+            window_draw(windows[i]);
+        }
     }
     fb_cursor_show();
 }
 
 window_t* gui_top_window_at(int x, int y) {
     for (int i = window_count - 1; i >= 0; i--) {
-        if (window_hit(windows[i], x, y)) return windows[i];
+        if (windows[i]->visible && window_hit(windows[i], x, y))
+            return windows[i];
     }
     return 0;
 }
@@ -71,36 +94,36 @@ void gui_on_mouse(void) {
     int left_now  = (b & 0x01) ? 1 : 0;
     int left_prev = (last_buttons & 0x01) ? 1 : 0;
 
-    /* 左键刚按下 */
     if (left_now && !left_prev) {
         window_t* w = gui_top_window_at(mx, my);
         if (w) {
-            /* 点击任意窗口 → 提到最上层并成为焦点 */
-            bring_to_front(w);
-            focus = w;
+            /* 关闭按钮？ */
+            if (window_close_hit(w, mx, my)) {
+                serial_printf("GUI: closing window '%s'\n", w->title);
+                if (w->on_close) w->on_close(w);
+                gui_remove_window(w);
+                gui_redraw();
+                last_buttons = b;
+                return;
+            }
 
-            /* 如果点在标题栏 → 开始拖动 */
+            bring_to_front(w);
+            if (focus) focus->focused = 0;
+            focus = w;
+            focus->focused = 1;
+
             if (in_title_bar(w, mx, my)) {
                 drag_win = w;
                 drag_off_x = mx - w->x;
                 drag_off_y = my - w->y;
-                serial_printf("GUI: start drag '%s'\n", w->title);
             }
-            /* 调用窗口点击回调 */
             if (w->on_click) w->on_click(w, mx, my);
-
             gui_redraw();
         }
     }
-    /* 左键释放 */
     else if (!left_now && left_prev) {
-        if (drag_win) {
-            serial_printf("GUI: drop '%s' at (%d,%d)\n",
-                          drag_win->title, drag_win->x, drag_win->y);
-            drag_win = 0;
-        }
+        drag_win = 0;
     }
-    /* 拖动中 */
     else if (left_now && drag_win) {
         int nx = mx - drag_off_x;
         int ny = my - drag_off_y;
