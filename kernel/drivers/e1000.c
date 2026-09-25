@@ -338,5 +338,153 @@ void e1000_ping(uint32_t dst_ip_be) {
     }
 }
 
+/* ===== 发送 UDP 包（含 Ethernet + IP + UDP 头） ===== */
+static int e1000_send_udp(uint32_t dst_ip_be, uint16_t src_port, uint16_t dst_port,
+                          const void* payload, int payload_len)
+{
+    int total = 14 + 20 + 8 + payload_len;
+    if (total > 1500) return -1;
+
+    uint8_t pkt[1500];
+    for (int i = 0; i < total; i++) pkt[i] = 0;
+
+    /* --- Ethernet --- */
+    for (int i = 0; i < 6; i++) pkt[i] = gateway_mac[i];
+    for (int i = 0; i < 6; i++) pkt[6 + i] = mac[i];
+    pkt[12] = 0x08; pkt[13] = 0x00;
+
+    /* --- IP --- */
+    int ip_total = 20 + 8 + payload_len;
+    pkt[14] = 0x45;
+    pkt[15] = 0x00;
+    pkt[16] = (ip_total >> 8) & 0xFF;
+    pkt[17] = ip_total & 0xFF;
+    pkt[18] = 0x00; pkt[19] = 0x02;   /* ID */
+    pkt[20] = 0x00; pkt[21] = 0x00;
+    pkt[22] = 64;                     /* TTL */
+    pkt[23] = 0x11;                   /* UDP = 17 */
+    pkt[26] = 10; pkt[27] = 0; pkt[28] = 2; pkt[29] = 15;
+    pkt[30] = (dst_ip_be >> 24) & 0xFF;
+    pkt[31] = (dst_ip_be >> 16) & 0xFF;
+    pkt[32] = (dst_ip_be >> 8)  & 0xFF;
+    pkt[33] =  dst_ip_be        & 0xFF;
+    uint16_t ips = ip_checksum(pkt + 14, 20);
+    pkt[24] = (ips >> 8) & 0xFF;
+    pkt[25] =  ips       & 0xFF;
+
+    /* --- UDP --- */
+    pkt[34] = (src_port >> 8) & 0xFF;
+    pkt[35] =  src_port       & 0xFF;
+    pkt[36] = (dst_port >> 8) & 0xFF;
+    pkt[37] =  dst_port       & 0xFF;
+    int udp_len = 8 + payload_len;
+    pkt[38] = (udp_len >> 8) & 0xFF;
+    pkt[39] =  udp_len       & 0xFF;
+    pkt[40] = 0x00; pkt[41] = 0x00;   /* UDP checksum = 0（IPv4 可选） */
+
+    /* --- Payload --- */
+    const uint8_t* src = (const uint8_t*)payload;
+    for (int i = 0; i < payload_len; i++) pkt[42 + i] = src[i];
+
+    return e1000_send(pkt, total);
+}
+
+/* ===== 编码 DNS 域名：example.com -> 07 e x a m p l e 03 c o m 00 ===== */
+static int dns_encode_name(uint8_t* out, const char* name) {
+    int pos = 0;
+    const char* p = name;
+    while (*p) {
+        const char* start = p;
+        while (*p && *p != '.') p++;
+        int len = (int)(p - start);
+        if (len > 63) return -1;
+        out[pos++] = (uint8_t)len;
+        for (int i = 0; i < len; i++) out[pos++] = (uint8_t)start[i];
+        if (*p == '.') p++;
+    }
+    out[pos++] = 0;
+    return pos;
+}
+
+/* ===== 发 DNS 查询 ===== */
+void e1000_dns_query(const char* hostname) {
+    uint8_t dns[256];
+    for (int i = 0; i < 256; i++) dns[i] = 0;
+
+    /* DNS 头（12 字节） */
+    dns[0] = 0xAB; dns[1] = 0xCD;     /* 事务 ID */
+    dns[2] = 0x01; dns[3] = 0x00;     /* Flags: standard query, RD=1 */
+    dns[4] = 0x00; dns[5] = 0x01;     /* QDCOUNT = 1 */
+    /* ANCOUNT / NSCOUNT / ARCOUNT = 0 */
+
+    /* 问题段 */
+    int nlen = dns_encode_name(dns + 12, hostname);
+    if (nlen < 0) {
+        serial_printf("DNS: bad hostname\n");
+        return;
+    }
+    int pos = 12 + nlen;
+    dns[pos++] = 0x00; dns[pos++] = 0x01;   /* QTYPE = A */
+    dns[pos++] = 0x00; dns[pos++] = 0x01;   /* QCLASS = IN */
+
+    serial_printf("DNS: querying %s (%d bytes)\n", hostname, pos);
+
+    /* 发到 10.0.2.3:53 */
+    e1000_send_udp(0x0A000203, 12345, 53, dns, pos);
+}
+
+/* ===== 解析 DNS 应答 ===== */
+int e1000_dns_parse_reply(const uint8_t* dns, int len, uint8_t out_ip[4]) {
+    if (len < 12) return -1;
+
+    /* 检查事务 ID */
+    if (dns[0] != 0xAB || dns[1] != 0xCD) return -1;
+
+    uint16_t flags    = (dns[2] << 8) | dns[3];
+    uint16_t qdcount  = (dns[4] << 8) | dns[5];
+    uint16_t ancount  = (dns[6] << 8) | dns[7];
+
+    if (!(flags & 0x8000)) return -1;     /* 必须是应答 */
+    if ((flags & 0x000F) != 0) return -1; /* RCODE != 0 表示出错 */
+
+    int pos = 12;
+
+    /* 跳过问题段 */
+    for (int q = 0; q < qdcount; q++) {
+        while (pos < len && dns[pos] != 0) {
+            if ((dns[pos] & 0xC0) == 0xC0) { pos += 2; break; }
+            pos += 1 + dns[pos];
+        }
+        if (pos < len && dns[pos] == 0) pos++;
+        pos += 4;   /* QTYPE + QCLASS */
+    }
+
+    /* 读应答段 */
+    for (int a = 0; a < ancount && pos < len; a++) {
+        /* 跳过 name（可能是指针） */
+        if ((dns[pos] & 0xC0) == 0xC0) {
+            pos += 2;
+        } else {
+            while (pos < len && dns[pos] != 0) pos += 1 + dns[pos];
+            if (pos < len) pos++;
+        }
+
+        if (pos + 10 > len) return -1;
+        uint16_t type   = (dns[pos] << 8) | dns[pos + 1];
+        uint16_t rdlen  = (dns[pos + 8] << 8) | dns[pos + 9];
+        pos += 10;
+
+        if (type == 0x0001 && rdlen == 4) {   /* A 记录 */
+            out_ip[0] = dns[pos];
+            out_ip[1] = dns[pos + 1];
+            out_ip[2] = dns[pos + 2];
+            out_ip[3] = dns[pos + 3];
+            return 0;
+        }
+        pos += rdlen;
+    }
+    return -1;
+}
+
 uint32_t e1000_debug_rdh(void) { return e1000_read(E1000_RDH); }
 uint32_t e1000_debug_rdt(void) { return e1000_read(E1000_RDT); }

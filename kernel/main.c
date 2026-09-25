@@ -128,12 +128,10 @@ static void user_task_entry(void) {
 static void net_test(void) {
     serial_printf("=== NET test ===\n");
 
-    /* 1. ARP: 请求网关 MAC */
+    /* 1. ARP */
     e1000_send_arp_request();
-
     for (volatile uint64_t i = 0; i < 100000000ULL; i++);
 
-    /* 收 ARP 应答 */
     int got_arp = 0;
     for (int tries = 0; tries < 30; tries++) {
         uint8_t pkt[2048];
@@ -148,28 +146,51 @@ static void net_test(void) {
         }
         for (volatile int i = 0; i < 20000000; i++);
     }
-    if (!got_arp) {
-        serial_printf("ARP: no reply\n");
-        return;
-    }
+    if (!got_arp) { serial_printf("ARP: no reply\n"); return; }
 
-    /* 2. ICMP: ping 网关 */
-    e1000_ping(0x0A000202);   /* 10.0.2.2 */
-
+    /* 2. ICMP */
+    e1000_ping(0x0A000202);
     for (volatile uint64_t i = 0; i < 100000000ULL; i++);
 
-    /* 收 ICMP echo reply */
     for (int tries = 0; tries < 30; tries++) {
         uint8_t pkt[2048];
         int n = e1000_recv(pkt, sizeof(pkt));
         if (n >= 42 && pkt[12] == 0x08 && pkt[13] == 0x00 &&
             pkt[23] == 0x01 && pkt[34] == 0x00) {
             serial_printf("ICMP: ECHO REPLY received! (%d bytes)\n", n);
-            return;
+            break;
         }
         for (volatile int i = 0; i < 20000000; i++);
     }
-    serial_printf("ICMP: no reply\n");
+
+    /* 3. DNS */
+    e1000_dns_query("example.com");
+    for (volatile uint64_t i = 0; i < 100000000ULL; i++);
+
+    for (int tries = 0; tries < 30; tries++) {
+        uint8_t pkt[2048];
+        int n = e1000_recv(pkt, sizeof(pkt));
+        if (n < 42) continue;
+        /* 检查是 UDP，端口 53，发给 12345 */
+        if (pkt[12] == 0x08 && pkt[13] == 0x00 && pkt[23] == 0x11 &&
+            pkt[34] == 0x00 && pkt[35] == 0x35 &&
+            pkt[36] == 0x30 && pkt[37] == 0x39) {
+            serial_printf("DNS: got reply %d bytes\n", n);
+
+            /* DNS 载荷从偏移 42 开始 */
+            uint8_t ip[4];
+            if (e1000_dns_parse_reply(pkt + 42, n - 42, ip) == 0) {
+                serial_printf("DNS: example.com = %u.%u.%u.%u\n",
+                              ip[0], ip[1], ip[2], ip[3]);
+                return;
+            } else {
+                serial_printf("DNS: parse failed\n");
+            }
+            break;
+        }
+        for (volatile int i = 0; i < 20000000; i++);
+    }
+    serial_printf("DNS: no reply\n");
 }
 
 void kmain(uint32_t mb_info, uint32_t magic) {
