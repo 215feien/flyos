@@ -27,6 +27,7 @@
 #include "sem.h"
 #include "vmm.h"
 #include "fat16.h"
+#include "pci.h"
 
 extern void user_enter(void* entry, uint64_t user_stack_top);
 extern uint8_t _binary_user_init_elf_start[];
@@ -143,6 +144,20 @@ void kmain(uint32_t mb_info, uint32_t magic) {
     pmm_init(mb_info);
     vmm_init();
     heap_init();
+
+    pci_init();
+
+    /* 找 e1000 网卡 */
+    pci_device_t* nic = pci_find(0x8086, 0x100E);   /* 82540EM */
+    if (nic) {
+        serial_printf("=== e1000 found at %02x:%02x.%u, IRQ=%u ===\n",
+                      nic->bus, nic->slot, nic->func, nic->irq_line);
+        for (int i = 0; i < 6; i++) {
+            serial_printf("  BAR%d = 0x%08x\n", i, nic->bar[i]);
+        }
+    } else {
+        serial_printf("=== e1000 NOT found ===\n");
+    }
 
     fb_init(mb_info);
     fb_term_init();
