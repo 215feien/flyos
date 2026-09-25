@@ -128,30 +128,48 @@ static void user_task_entry(void) {
 static void net_test(void) {
     serial_printf("=== NET test ===\n");
 
-    /* 发 ARP 请求 */
+    /* 1. ARP: 请求网关 MAC */
     e1000_send_arp_request();
 
-    /* 等 2 秒 */
-    for (volatile uint64_t i = 0; i < 200000000ULL; i++);
+    for (volatile uint64_t i = 0; i < 100000000ULL; i++);
 
-    serial_printf("E1000: after ARP, RDH=%u RDT=%u\n",
-                  e1000_debug_rdh(), e1000_debug_rdt());
-
-    /* 尝试收包（多轮） */
-    for (int tries = 0; tries < 20; tries++) {
+    /* 收 ARP 应答 */
+    int got_arp = 0;
+    for (int tries = 0; tries < 30; tries++) {
         uint8_t pkt[2048];
         int n = e1000_recv(pkt, sizeof(pkt));
-        if (n > 0) {
-            serial_printf("E1000: got packet %d bytes\n", n);
-            for (int i = 0; i < 16 && i < n; i++) {
-                serial_printf("%02x ", pkt[i]);
-            }
-            serial_printf("\n");
+        if (n >= 42 && pkt[12] == 0x08 && pkt[13] == 0x06 && pkt[20] == 0x00 && pkt[21] == 0x02) {
+            for (int i = 0; i < 6; i++) gateway_mac[i] = pkt[6 + i];
+            serial_printf("ARP: gateway MAC = %02x:%02x:%02x:%02x:%02x:%02x\n",
+                          gateway_mac[0], gateway_mac[1], gateway_mac[2],
+                          gateway_mac[3], gateway_mac[4], gateway_mac[5]);
+            got_arp = 1;
+            break;
+        }
+        for (volatile int i = 0; i < 20000000; i++);
+    }
+    if (!got_arp) {
+        serial_printf("ARP: no reply\n");
+        return;
+    }
+
+    /* 2. ICMP: ping 网关 */
+    e1000_ping(0x0A000202);   /* 10.0.2.2 */
+
+    for (volatile uint64_t i = 0; i < 100000000ULL; i++);
+
+    /* 收 ICMP echo reply */
+    for (int tries = 0; tries < 30; tries++) {
+        uint8_t pkt[2048];
+        int n = e1000_recv(pkt, sizeof(pkt));
+        if (n >= 42 && pkt[12] == 0x08 && pkt[13] == 0x00 &&
+            pkt[23] == 0x01 && pkt[34] == 0x00) {
+            serial_printf("ICMP: ECHO REPLY received! (%d bytes)\n", n);
             return;
         }
         for (volatile int i = 0; i < 20000000; i++);
     }
-    serial_printf("E1000: no packet received\n");
+    serial_printf("ICMP: no reply\n");
 }
 
 void kmain(uint32_t mb_info, uint32_t magic) {

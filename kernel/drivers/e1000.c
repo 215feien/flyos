@@ -28,6 +28,8 @@
 #define NUM_RX_DESC 16
 #define NUM_TX_DESC 16
 
+uint8_t gateway_mac[6] = {0};
+
 /* 描述符（legacy，非扩展） */
 typedef struct {
     uint64_t addr;
@@ -260,6 +262,79 @@ void e1000_send_arp_request(void) {
         serial_printf("E1000: ARP send failed\n");
     } else {
         serial_printf("E1000: ARP sent\n");
+    }
+}
+
+static uint16_t icmp_checksum(const void* data, int len) {
+    const uint16_t* p = (const uint16_t*)data;
+    uint32_t sum = 0;
+    while (len > 1) { sum += *p++; len -= 2; }
+    if (len) sum += *(const uint8_t*)p;
+    while (sum >> 16) sum = (sum & 0xFFFF) + (sum >> 16);
+    return (uint16_t)~sum;
+}
+
+
+/* ===== 简易 IP 校验和 ===== */
+static uint16_t ip_checksum(const void* data, int len) {
+    const uint8_t* p = (const uint8_t*)data;
+    uint32_t sum = 0;
+    while (len > 1) {
+        sum += ((uint16_t)p[0] << 8) | p[1];   /* big-endian */
+        p += 2;
+        len -= 2;
+    }
+    if (len) sum += ((uint16_t)p[0] << 8);     /* 奇数尾字节 */
+    while (sum >> 16) sum = (sum & 0xFFFF) + (sum >> 16);
+    return (uint16_t)~sum;
+}
+
+/* ===== 发 ICMP Echo Request ===== */
+void e1000_ping(uint32_t dst_ip_be) {
+    uint8_t pkt[98];
+    for (int i = 0; i < 98; i++) pkt[i] = 0;
+
+    /* --- 以太网头 (14 字节) --- */
+    for (int i = 0; i < 6; i++) pkt[i] = gateway_mac[i];   /* 目的 MAC = 网关 */
+    for (int i = 0; i < 6; i++) pkt[6 + i] = mac[i];        /* 源 MAC = 自己 */
+    pkt[12] = 0x08; pkt[13] = 0x00;                          /* IPv4 */
+
+    /* --- IP 头 (20 字节, 从偏移 14 开始) --- */
+    pkt[14] = 0x45;                  /* version=4, IHL=5 */
+    pkt[15] = 0x00;                  /* DSCP=0 */
+    pkt[16] = 0x00; pkt[17] = 0x54;  /* total length = 84 */
+    pkt[18] = 0x00; pkt[19] = 0x01;  /* ID */
+    pkt[20] = 0x00; pkt[21] = 0x00;  /* flags/frag */
+    pkt[22] = 64;                    /* TTL */
+    pkt[23] = 0x01;                  /* protocol = ICMP */
+    /* checksum 在 24-25，先留 0 */
+    pkt[26] = 10; pkt[27] = 0; pkt[28] = 2; pkt[29] = 15;   /* src = 10.0.2.15 */
+    pkt[30] = (dst_ip_be >> 24) & 0xFF;
+    pkt[31] = (dst_ip_be >> 16) & 0xFF;
+    pkt[32] = (dst_ip_be >> 8)  & 0xFF;
+    pkt[33] =  dst_ip_be        & 0xFF;
+
+    uint16_t ips = ip_checksum(pkt + 14, 20);
+    pkt[24] = (ips >> 8) & 0xFF;
+    pkt[25] =  ips       & 0xFF;
+
+    /* --- ICMP Echo Request (从偏移 34 开始) --- */
+    pkt[34] = 0x08;                  /* type = 8 (echo request) */
+    pkt[35] = 0x00;                  /* code = 0 */
+    /* checksum 在 36-37，先留 0 */
+    pkt[38] = 0x00; pkt[39] = 0x01;  /* identifier */
+    pkt[40] = 0x00; pkt[41] = 0x01;  /* sequence */
+    for (int i = 42; i < 98; i++) pkt[i] = (uint8_t)i;   /* 填充数据 */
+
+    uint16_t ics = ip_checksum(pkt + 34, 64);
+    pkt[36] = (ics >> 8) & 0xFF;
+    pkt[37] =  ics       & 0xFF;
+
+    serial_printf("ICMP: sending echo request to 10.0.2.2\n");
+    if (e1000_send(pkt, 98) < 0) {
+        serial_printf("ICMP: send failed\n");
+    } else {
+        serial_printf("ICMP: echo request sent\n");
     }
 }
 
