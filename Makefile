@@ -94,8 +94,9 @@ $(ISO): $(KERNEL) grub.cfg
 run: $(ISO) $(DISK)
 	$(QEMU) -cdrom $(ISO) -boot d -serial stdio \
 	        -bios /usr/share/ovmf/OVMF.fd \
-	        -drive file=$(DISK),format=raw,if=ide,index=0,cache=writethrough
-
+	        -drive file=$(DISK),format=raw,if=ide,index=0,cache=writethrough \
+	        -netdev user,id=n0 -device e1000,netdev=n0
+			
 debug: $(ISO) $(DISK)
 	$(QEMU) -cdrom $(ISO) -boot d -serial stdio -s -S \
 	        -bios /usr/share/ovmf/OVMF.fd \

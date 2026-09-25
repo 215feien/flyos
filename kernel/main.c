@@ -32,14 +32,13 @@
 extern void user_enter(void* entry, uint64_t user_stack_top);
 extern uint8_t _binary_user_init_elf_start[];
 extern uint8_t _binary_user_init_elf_end[];
-
 extern int kernel_spawn_child(void);
 extern uint8_t _binary_user_hello_elf_start[];
 extern uint8_t _binary_user_hello_elf_end[];
 
 static uint64_t user_entry_addr = 0;
 
-/* ===== GUI demo：计数器 ===== */
+/* ===== GUI demo ===== */
 static window_t demo_win;
 static int      counter_value = 0;
 
@@ -88,7 +87,7 @@ static void demo_click(window_t* w, int mx, int my) {
     }
 }
 
-/* ===== 子进程 trampoline ===== */
+/* ===== 子进程 ===== */
 static int spawn_used = 0;
 
 static void child_task_entry(void) {
@@ -113,18 +112,46 @@ int kernel_spawn_child(void) {
     return (int)t->id;
 }
 
-/* ===== 定时器中断处理 ===== */
 static void timer_handler(struct regs* r) {
     (void)r;
     gui_on_mouse();
     scheduler_tick();
 }
 
-/* ===== 用户任务入口 ===== */
 static void user_task_entry(void) {
     serial_printf("[kernel] entering ring3 at 0x%lx\n", user_entry_addr);
     user_enter((void*)user_entry_addr, USER_STACK_BASE + USER_STACK_SIZE);
     for (;;) { __asm__ volatile ("hlt"); }
+}
+
+/* ===== 网络测试 ===== */
+static void net_test(void) {
+    serial_printf("=== NET test ===\n");
+
+    /* 发 ARP 请求 */
+    e1000_send_arp_request();
+
+    /* 等 2 秒 */
+    for (volatile uint64_t i = 0; i < 200000000ULL; i++);
+
+    serial_printf("E1000: after ARP, RDH=%u RDT=%u\n",
+                  e1000_debug_rdh(), e1000_debug_rdt());
+
+    /* 尝试收包（多轮） */
+    for (int tries = 0; tries < 20; tries++) {
+        uint8_t pkt[2048];
+        int n = e1000_recv(pkt, sizeof(pkt));
+        if (n > 0) {
+            serial_printf("E1000: got packet %d bytes\n", n);
+            for (int i = 0; i < 16 && i < n; i++) {
+                serial_printf("%02x ", pkt[i]);
+            }
+            serial_printf("\n");
+            return;
+        }
+        for (volatile int i = 0; i < 20000000; i++);
+    }
+    serial_printf("E1000: no packet received\n");
 }
 
 void kmain(uint32_t mb_info, uint32_t magic) {
@@ -150,10 +177,9 @@ void kmain(uint32_t mb_info, uint32_t magic) {
     vmm_init();
     heap_init();
 
-    /* ===== PCI 枚举 ===== */
+    /* ===== PCI + e1000 ===== */
     pci_init();
 
-    /* 找 e1000 网卡 */
     pci_device_t* nic = pci_find(0x8086, 0x100E);
     if (nic) {
         serial_printf("=== e1000 found at %02x:%02x.%u, IRQ=%u ===\n",
@@ -162,7 +188,6 @@ void kmain(uint32_t mb_info, uint32_t magic) {
             serial_printf("  BAR%d = 0x%08x\n", i, nic->bar[i]);
         }
 
-        /* 映射 MMIO 到虚拟地址 */
         uint64_t mmio_phys = nic->bar[0] & ~0xFULL;
         uint64_t mmio_size = 128 * 1024;
         uint64_t mmio_virt = 0xFFFFA00000000000ULL;
@@ -174,6 +199,9 @@ void kmain(uint32_t mb_info, uint32_t magic) {
                       mmio_phys, mmio_virt);
 
         e1000_probe(mmio_virt);
+        if (e1000_init() == 0) {
+            net_test();
+        }
     } else {
         serial_printf("=== e1000 NOT found ===\n");
     }
@@ -187,7 +215,7 @@ void kmain(uint32_t mb_info, uint32_t magic) {
 
     ramfs_init();
     file_init();
-    /* persist_load(); */   /* 临时禁用：FAT16 占用整个磁盘 */
+    /* persist_load(); */
 
     fat16_init(0);
     serial_printf("=== FAT16 test ===\n");
@@ -203,7 +231,6 @@ void kmain(uint32_t mb_info, uint32_t magic) {
     mouse_init();
     fb_cursor_init();
 
-    /* ===== GUI ===== */
     gui_init();
 
     static window_t term_win;
@@ -226,7 +253,6 @@ void kmain(uint32_t mb_info, uint32_t magic) {
 
     serial_printf("GUI: terminal + counter created\n");
 
-    /* ===== 加载用户 ELF ===== */
     uint8_t* elf = _binary_user_init_elf_start;
     uint64_t elf_size = (uint64_t)(_binary_user_init_elf_end - _binary_user_init_elf_start);
     serial_printf("ELF size = %lu bytes\n", elf_size);
@@ -239,7 +265,6 @@ void kmain(uint32_t mb_info, uint32_t magic) {
 
     user_setup_stack();
 
-    /* ===== 任务 + 信号量 ===== */
     task_init();
     sem_init_all();
     sem_init(0, 1);
