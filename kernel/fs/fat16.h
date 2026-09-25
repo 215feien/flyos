@@ -24,5 +24,7 @@ void     fat16_init(uint32_t partition_lba);
 int      fat16_list_root(char* buf, int max);
 int      fat16_read_file(const char* name, void* buf, int max);
 uint64_t fat16_file_size(const char* name);
+int fat16_write_file(const char* name, const void* data, int size);
+int fat16_delete_file(const char* name);
 
 #endif

@@ -190,6 +190,16 @@ uint64_t syscall_dispatch(uint64_t nr, uint64_t a1, uint64_t a2, uint64_t a3) {
             return (uint64_t)(int64_t)fat16_read_file((const char*)a1,
                                                        (void*)a2, (int)a3);
 
+        case SYS_FAT_WRITE: {
+            const char* name = (const char*)a1;
+            const void* data = (const void*)a2;
+            int size = (int)a3;
+            return (uint64_t)(int64_t)fat16_write_file(name, data, size);
+        }
+
+        case SYS_FAT_DELETE:
+            return (uint64_t)(int64_t)fat16_delete_file((const char*)a1);
+
         default:
             serial_printf("SYSCALL: unknown %lu\n", nr);
             return (uint64_t)-1;

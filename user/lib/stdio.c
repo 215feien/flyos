@@ -204,3 +204,10 @@ long fs_fat_ls(char* buf, long max) {
 long fs_fat_read(const char* name, void* buf, long max) {
     return (long)sys_fat_read(name, buf, max);
 }
+
+long fs_fat_write(const char* name, const void* data, long size) {
+    return (long)sys_fat_write(name, data, size);
+}
+long fs_fat_delete(const char* name) {
+    return (long)sys_fat_delete(name);
+}
