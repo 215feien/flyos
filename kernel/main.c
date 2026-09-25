@@ -17,6 +17,7 @@
 #include "ramfs.h"
 #include "file.h"
 #include "persist.h"
+#include "fat16.h"
 #include "ata.h"
 #include "fb.h"
 #include "fb_term.h"
@@ -25,13 +26,14 @@
 #include "gui.h"
 #include "term_window.h"
 #include "sem.h"
-#include "vmm.h"
-#include "fat16.h"
 #include "pci.h"
+#include "e1000.h"
 
 extern void user_enter(void* entry, uint64_t user_stack_top);
 extern uint8_t _binary_user_init_elf_start[];
 extern uint8_t _binary_user_init_elf_end[];
+
+extern int kernel_spawn_child(void);
 extern uint8_t _binary_user_hello_elf_start[];
 extern uint8_t _binary_user_hello_elf_end[];
 
@@ -86,18 +88,7 @@ static void demo_click(window_t* w, int mx, int my) {
     }
 }
 
-static void timer_handler(struct regs* r) {
-    (void)r;
-    gui_on_mouse();
-    scheduler_tick();
-}
-
-static void user_task_entry(void) {
-    serial_printf("[kernel] entering ring3 at 0x%lx\n", user_entry_addr);
-    user_enter((void*)user_entry_addr, USER_STACK_BASE + USER_STACK_SIZE);
-    for (;;) { __asm__ volatile ("hlt"); }
-}
-
+/* ===== 子进程 trampoline ===== */
 static int spawn_used = 0;
 
 static void child_task_entry(void) {
@@ -120,6 +111,20 @@ int kernel_spawn_child(void) {
     task_t* t = task_create("child", child_task_entry);
     serial_printf("SPAWN: child task created (entry=0x%lx) id=%u\n", entry, t->id);
     return (int)t->id;
+}
+
+/* ===== 定时器中断处理 ===== */
+static void timer_handler(struct regs* r) {
+    (void)r;
+    gui_on_mouse();
+    scheduler_tick();
+}
+
+/* ===== 用户任务入口 ===== */
+static void user_task_entry(void) {
+    serial_printf("[kernel] entering ring3 at 0x%lx\n", user_entry_addr);
+    user_enter((void*)user_entry_addr, USER_STACK_BASE + USER_STACK_SIZE);
+    for (;;) { __asm__ volatile ("hlt"); }
 }
 
 void kmain(uint32_t mb_info, uint32_t magic) {
@@ -145,31 +150,46 @@ void kmain(uint32_t mb_info, uint32_t magic) {
     vmm_init();
     heap_init();
 
+    /* ===== PCI 枚举 ===== */
     pci_init();
 
     /* 找 e1000 网卡 */
-    pci_device_t* nic = pci_find(0x8086, 0x100E);   /* 82540EM */
+    pci_device_t* nic = pci_find(0x8086, 0x100E);
     if (nic) {
         serial_printf("=== e1000 found at %02x:%02x.%u, IRQ=%u ===\n",
                       nic->bus, nic->slot, nic->func, nic->irq_line);
         for (int i = 0; i < 6; i++) {
             serial_printf("  BAR%d = 0x%08x\n", i, nic->bar[i]);
         }
+
+        /* 映射 MMIO 到虚拟地址 */
+        uint64_t mmio_phys = nic->bar[0] & ~0xFULL;
+        uint64_t mmio_size = 128 * 1024;
+        uint64_t mmio_virt = 0xFFFFA00000000000ULL;
+
+        for (uint64_t off = 0; off < mmio_size; off += 0x1000) {
+            vmm_map(mmio_virt + off, mmio_phys + off, VMM_WRITABLE);
+        }
+        serial_printf("=== MMIO mapped: phys 0x%lx -> virt 0x%lx ===\n",
+                      mmio_phys, mmio_virt);
+
+        e1000_probe(mmio_virt);
     } else {
         serial_printf("=== e1000 NOT found ===\n");
     }
 
     fb_init(mb_info);
     fb_term_init();
+    fb_term_write("Hello x86_64 OS!\n");
+    fb_term_write("(graphics mode)\n\n");
 
     ata_init();
 
     ramfs_init();
     file_init();
-    persist_load();
+    /* persist_load(); */   /* 临时禁用：FAT16 占用整个磁盘 */
 
-    fat16_init(0);        /* 磁盘从 LBA 0 开始当 FAT16 */
-
+    fat16_init(0);
     serial_printf("=== FAT16 test ===\n");
     static char fatbuf[1024];
     int fatn = fat16_list_root(fatbuf, sizeof(fatbuf));
@@ -186,29 +206,13 @@ void kmain(uint32_t mb_info, uint32_t magic) {
     /* ===== GUI ===== */
     gui_init();
 
-    /* 终端窗口：shell 输出进这里 */
-    gui_init();
-
     static window_t term_win;
     term_window_create(&term_win, 50, 50, 700, 500, "Terminal");
     gui_add_window(&term_win);
 
-    window_init(&demo_win, 800, 100, 420, 300, "Counter Demo");
-    window_set_colors(&demo_win, fb_rgb(40, 40, 55),
-                                 fb_rgb(70, 100, 200),
-                                 fb_rgb(255, 255, 255));
-    demo_win.on_draw  = demo_draw;
-    demo_win.on_click = demo_click;
-    gui_add_window(&demo_win);
-
-    term_win.focused = 1;   /* 终端默认聚焦 */
-    gui_redraw();
-
-    /* 欢迎语写在终端窗口里 */
     fb_term_write("Hello x86_64 OS!\n");
     fb_term_write("flyos terminal ready\n\n");
 
-    /* 计数器窗口 */
     window_init(&demo_win, 800, 100, 420, 300, "Counter Demo");
     window_set_colors(&demo_win, fb_rgb(40, 40, 55),
                                  fb_rgb(70, 100, 200),
@@ -217,11 +221,12 @@ void kmain(uint32_t mb_info, uint32_t magic) {
     demo_win.on_click = demo_click;
     gui_add_window(&demo_win);
 
+    term_win.focused = 1;
     gui_redraw();
 
     serial_printf("GUI: terminal + counter created\n");
 
-    /* 加载用户 ELF */
+    /* ===== 加载用户 ELF ===== */
     uint8_t* elf = _binary_user_init_elf_start;
     uint64_t elf_size = (uint64_t)(_binary_user_init_elf_end - _binary_user_init_elf_start);
     serial_printf("ELF size = %lu bytes\n", elf_size);
@@ -234,15 +239,12 @@ void kmain(uint32_t mb_info, uint32_t magic) {
 
     user_setup_stack();
 
-    /* 给 user 任务一份独立的页表 */
-    uint64_t user_pml4 = vmm_clone_pml4();
-
+    /* ===== 任务 + 信号量 ===== */
     task_init();
     sem_init_all();
-    sem_init(0, 1);      /* id 0 = 终端输出的互斥锁，初值 1 */
+    sem_init(0, 1);
 
-    task_t* user_task = task_create("user", user_task_entry);
-    user_task->pml4_phys = user_pml4;
+    task_create("user", user_task_entry);
 
     serial_printf("=== starting scheduler ===\n");
     __asm__ volatile ("sti");
