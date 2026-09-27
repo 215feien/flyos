@@ -8,23 +8,18 @@
 .global kernel_rsp
 .global user_return_rip
 .global user_return_rsp
-saved_user_rsp:
-    .skip 8
-kernel_rsp:
-    .skip 8
-user_return_rip:
-    .skip 8
-user_return_rsp:
-    .skip 8
+.global syscall_user_rcx
+saved_user_rsp:    .skip 8
+kernel_rsp:        .skip 8
+user_return_rip:   .skip 8
+user_return_rsp:   .skip 8
+syscall_user_rcx:  .skip 8
 
 .section .text
 syscall_entry:
     movq %rsp, saved_user_rsp(%rip)
     movq kernel_rsp(%rip), %rsp
 
-    /* 栈上依次：
-       r15 r14 r13 r12 rbp rbx r10 r9 r8 rdx rsi rdi rax r11 rcx
-       偏移 0   8  16  24  32  40  48 56 64  72  80  88  96 104 112 */
     pushq %rcx
     pushq %r11
     pushq %rax
@@ -41,31 +36,33 @@ syscall_entry:
     pushq %r14
     pushq %r15
 
-    movq 96(%rsp), %rdi     /* nr */
-    movq 88(%rsp), %rsi     /* a1 */
-    movq 80(%rsp), %rdx     /* a2 */
-    movq 72(%rsp), %rcx     /* a3 */
+    /* 先保存用户 RIP（rcx）到全局 */
+    movq %rcx, syscall_user_rcx(%rip)
+
+    /* 再读参数：rdi=nr, rsi=a1, rdx=a2, rcx=a3 */
+    movq 96(%rsp), %rdi
+    movq 88(%rsp), %rsi
+    movq 80(%rsp), %rdx
+    movq 72(%rsp), %rcx
 
     call syscall_dispatch
 
-    /* 返回值写回 rax 槽（偏移 96） */
     movq %rax, 96(%rsp)
 
-    /* 如果内核设置了 user_return_rip，就覆盖 rcx 槽（偏移 112） */
+    /* exec 用：覆盖用户 RIP */
     movq user_return_rip(%rip), %rax
     testq %rax, %rax
     jz 1f
     movq %rax, 112(%rsp)
     movq $0, user_return_rip(%rip)
 1:
-    /* 如果内核设置了 user_return_rsp，就覆盖 saved_user_rsp */
+    /* exec 用：覆盖用户 RSP */
     movq user_return_rsp(%rip), %rax
     testq %rax, %rax
     jz 2f
     movq %rax, saved_user_rsp(%rip)
     movq $0, user_return_rsp(%rip)
 2:
-    /* 现在才 pop，rax 从槽里恢复（是内核的返回值） */
     popq %r15
     popq %r14
     popq %r13
@@ -80,7 +77,7 @@ syscall_entry:
     popq %rdi
     popq %rax
     popq %r11
-    popq %rcx              /* 用户 rip，可能已被覆盖 */
+    popq %rcx
 
     movq saved_user_rsp(%rip), %rsp
     sysretq

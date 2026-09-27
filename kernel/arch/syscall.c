@@ -167,7 +167,7 @@ uint64_t syscall_dispatch(uint64_t nr, uint64_t a1, uint64_t a2, uint64_t a3) {
             return 0;
 
         case SYS_FORK:
-            return (uint64_t)(int64_t)kernel_spawn_child();
+            return (uint64_t)(int64_t)task_fork();
 
         case SYS_EXEC: {
             uint64_t sz = (uint64_t)(_binary_user_hello_elf_end -

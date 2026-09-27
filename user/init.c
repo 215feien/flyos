@@ -218,8 +218,14 @@ void _start(void) {
         }
         else if (strcmp(argv[0], "fork")   == 0) {
             i64 pid = sys_fork();
-            if (pid > 0) printf("forked child pid=%ld\n", (long)pid);
-            else puts("fork failed\n");
+            if (pid == 0) {
+                puts("[child] forked, exiting\n");
+                exit(0);
+            } else if (pid > 0) {
+                printf("forked child pid=%ld\n", (long)pid);
+            } else {
+                puts("fork failed\n");
+            }
         }
         else if (strcmp(argv[0], "exit")   == 0) exit(0);
         else if (strcmp(argv[0], "exec")   == 0) {

@@ -32,6 +32,7 @@ struct task {
     const char*  name;
     task_t*      next;
     task_t*      wq_next;
+    task_t*      parent;      /* fork 的父任务 */
 };
 
 void    task_init(void);
@@ -46,5 +47,7 @@ void wait_queue_wake_one(wait_queue_t* wq);
 void wait_queue_wake_all(wait_queue_t* wq);
 
 void task_sleep(uint64_t ms);   /* ← 新增 */
+
+int task_fork(void);
 
 #endif

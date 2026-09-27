@@ -93,7 +93,7 @@ void pmm_init(uint32_t mb_info_phys) {
         p += (tag->size + 7) & ~7U;
     }
 
-    mark_used(0, 0x100000);
+    mark_used(0, 0x800000);
     mark_used((uint64_t)(uintptr_t)kernel_start, (uint64_t)(uintptr_t)kernel_end);
     mark_used((uint64_t)mb_info_phys, (uint64_t)mb_info_phys + size);
 

@@ -346,12 +346,18 @@ void kmain(uint32_t mb_info, uint32_t magic) {
 
     user_setup_stack();
 
+    /* 为 user 任务克隆一份独立 PML4 */
+    uint64_t user_pml4 = vmm_clone_pml4();
+    serial_printf("MAIN: user_pml4 = 0x%lx\n", user_pml4);
+
     task_init();
     sem_init_all();
     sem_init(0, 1);
 
-    task_create("user", user_task_entry);
-
+    task_t* user_task = task_create("user", user_task_entry);
+    user_task->pml4_phys = user_pml4;
+    serial_printf("MAIN: user task pml4 = 0x%lx\n", user_task->pml4_phys);
+    
     serial_printf("=== starting scheduler ===\n");
     __asm__ volatile ("sti");
 

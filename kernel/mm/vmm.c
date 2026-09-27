@@ -15,11 +15,18 @@ static inline void invlpg(uint64_t virt) {
     __asm__ volatile ("invlpg (%0)" : : "r"(virt) : "memory");
 }
 
+static inline void flush_tlb_all(void) {
+    uint64_t cr3 = read_cr3();
+    __asm__ volatile ("mov %0, %%cr3" : : "r"(cr3) : "memory");
+}
+
 static void zero_page(uint64_t phys) {
     uint8_t* p = (uint8_t*)(uintptr_t)phys;
     for (int i = 0; i < 4096; i++) p[i] = 0;
 }
 
+/* 取得或创建下一级页表。
+   已存在的项也要补 U 位——否则用户态无法穿过中间层。 */
 static uint64_t* next_table(uint64_t* parent, int idx) {
     if (!(parent[idx] & VMM_PRESENT)) {
         uint64_t np = pmm_alloc_page();
@@ -27,31 +34,38 @@ static uint64_t* next_table(uint64_t* parent, int idx) {
         zero_page(np);
         parent[idx] = np | VMM_PRESENT | VMM_WRITABLE | VMM_USER;
     } else {
-        /* 已存在的上层页表项也必须有 U，否则用户态无法穿过 */
+        /* 已存在的上层页表项也必须有 U */
         parent[idx] |= VMM_USER;
     }
     return (uint64_t*)(uintptr_t)(parent[idx] & ADDR_MASK);
 }
 
-static void split_huge_pd(uint64_t* pd, int pd_idx) {
-    if (!(pd[pd_idx] & VMM_HUGE)) return;
+/* 如果 PD 项是 2MB 大页，拆成 512 个 4KB 小页 */
+static int split_huge_pd(uint64_t* pd, int pd_idx) {
+    if (!(pd[pd_idx] & VMM_HUGE)) return 0;   /* 不是大页，无需拆 */
+
     uint64_t huge_phys = pd[pd_idx] & ~0x1FFFFFULL;
     uint64_t flags     = pd[pd_idx] & 0xFFF;
-    uint64_t pt_phys   = pmm_alloc_page();
-    if (!pt_phys) return;
+
+    uint64_t pt_phys = pmm_alloc_page();
+    if (!pt_phys) return -1;
     zero_page(pt_phys);
     uint64_t* pt = (uint64_t*)(uintptr_t)pt_phys;
+
     for (int i = 0; i < 512; i++) {
         pt[i] = (huge_phys + (uint64_t)i * 4096) | flags | VMM_PRESENT | VMM_USER;
     }
     pd[pd_idx] = pt_phys | VMM_PRESENT | VMM_WRITABLE | VMM_USER;
-    invlpg((uint64_t)pd_idx * 0x200000ULL);
+
+    /* 刷新整个 TLB（invlpg 只刷 1 个 4KB 页，不够） */
+    flush_tlb_all();
+    return 0;
 }
 
 void vmm_init(void) {
-    serial_write("VMM: CR3 = ");
+    serial_printf("VMM: CR3 = ");
     serial_hex(read_cr3());
-    serial_write("\n");
+    serial_printf("\n");
 }
 
 void vmm_map(uint64_t virt, uint64_t phys, uint64_t flags) {
@@ -63,8 +77,18 @@ void vmm_map(uint64_t virt, uint64_t phys, uint64_t flags) {
     uint64_t* pml4 = (uint64_t*)(uintptr_t)(read_cr3() & ADDR_MASK);
     uint64_t* pdpt = next_table(pml4, (int)pml4_idx); if (!pdpt) return;
     uint64_t* pd   = next_table(pdpt, (int)pdpt_idx); if (!pd)   return;
-    split_huge_pd(pd, (int)pd_idx);
-    uint64_t* pt   = next_table(pd, (int)pd_idx);     if (!pt)   return;
+
+    if (split_huge_pd(pd, (int)pd_idx) < 0) {
+        serial_printf("VMM: WARN: split_huge_pd failed at virt=0x%lx\n", virt);
+        return;
+    }
+
+    if (pd[pd_idx] & VMM_HUGE) {
+        serial_printf("VMM: WARN: still huge at virt=0x%lx\n", virt);
+        return;
+    }
+
+    uint64_t* pt = next_table(pd, (int)pd_idx); if (!pt) return;
 
     pt[pt_idx] = (phys & ~0xFFFULL) | (flags & 0xFFF) | VMM_PRESENT;
     invlpg(virt);
@@ -84,6 +108,7 @@ void vmm_unmap(uint64_t virt) {
     if (!(pd[pd_idx] & VMM_PRESENT)) return;
     if (pd[pd_idx] & VMM_HUGE) return;
     uint64_t* pt   = (uint64_t*)(uintptr_t)(pd[pd_idx] & ADDR_MASK);
+
     pt[pt_idx] = 0;
     invlpg(virt);
 }
@@ -108,24 +133,11 @@ uint64_t vmm_get_phys(uint64_t virt) {
     return (pt[pt_idx] & ADDR_MASK) + (virt & 0xFFFULL);
 }
 
-void vmm_page_fault_handler(struct regs* r) {
-    uint64_t cr2;
-    __asm__ volatile ("mov %%cr2, %0" : "=r"(cr2));
-
-    serial_write("\n*** PAGE FAULT ***\n");
-    serial_write("virt     = "); serial_hex(cr2);        serial_write("\n");
-    serial_write("err_code = "); serial_hex(r->err_code); serial_write("\n");
-    serial_write("rip      = "); serial_hex(r->rip);      serial_write("\n");
-
-    for (;;) {
-        __asm__ volatile ("hlt");
-    }
-}
-
 uint64_t vmm_current_pml4(void) {
     return read_cr3() & ADDR_MASK;
 }
 
+/* ===== 浅拷贝：只复制 PML4 顶层，下级页表共享 ===== */
 uint64_t vmm_clone_pml4(void) {
     uint64_t old_phys = read_cr3() & ADDR_MASK;
     uint64_t new_phys = pmm_alloc_page();
@@ -134,7 +146,6 @@ uint64_t vmm_clone_pml4(void) {
     uint64_t* old_pml4 = (uint64_t*)(uintptr_t)old_phys;
     uint64_t* new_pml4 = (uint64_t*)(uintptr_t)new_phys;
 
-    /* 完整复制 512 项：内核部分（PML4[256+]）和用户部分暂时共享下级页表 */
     for (int i = 0; i < 512; i++) {
         new_pml4[i] = old_pml4[i];
     }
@@ -143,7 +154,7 @@ uint64_t vmm_clone_pml4(void) {
     return new_phys;
 }
 
-/* 深拷贝：复制用户空间（低半区）的 PDPT/PD/PT，并复制物理页内容 */
+/* ===== 深拷贝：复制用户空间（低半区），内核空间共享 ===== */
 static uint64_t copy_page(uint64_t src_phys) {
     uint64_t dst_phys = pmm_alloc_page();
     if (!dst_phys) return 0;
@@ -153,10 +164,10 @@ static uint64_t copy_page(uint64_t src_phys) {
     return dst_phys;
 }
 
-/* 只克隆低半区（用户空间），高半区（内核）共享 */
 uint64_t vmm_clone_pml4_deep(uint64_t src_pml4_phys) {
     uint64_t dst_pml4_phys = pmm_alloc_page();
     if (!dst_pml4_phys) return 0;
+    zero_page(dst_pml4_phys);
 
     uint64_t* src_pml4 = (uint64_t*)(uintptr_t)src_pml4_phys;
     uint64_t* dst_pml4 = (uint64_t*)(uintptr_t)dst_pml4_phys;
@@ -175,6 +186,7 @@ uint64_t vmm_clone_pml4_deep(uint64_t src_pml4_phys) {
         uint64_t src_pdpt_phys = src_pml4[i] & ADDR_MASK;
         uint64_t dst_pdpt_phys = pmm_alloc_page();
         if (!dst_pdpt_phys) return 0;
+        zero_page(dst_pdpt_phys);
 
         uint64_t* src_pdpt = (uint64_t*)(uintptr_t)src_pdpt_phys;
         uint64_t* dst_pdpt = (uint64_t*)(uintptr_t)dst_pdpt_phys;
@@ -186,6 +198,7 @@ uint64_t vmm_clone_pml4_deep(uint64_t src_pml4_phys) {
             uint64_t src_pd_phys = src_pdpt[j] & ADDR_MASK;
             uint64_t dst_pd_phys = pmm_alloc_page();
             if (!dst_pd_phys) return 0;
+            zero_page(dst_pd_phys);
 
             uint64_t* src_pd = (uint64_t*)(uintptr_t)src_pd_phys;
             uint64_t* dst_pd = (uint64_t*)(uintptr_t)dst_pd_phys;
@@ -193,7 +206,8 @@ uint64_t vmm_clone_pml4_deep(uint64_t src_pml4_phys) {
 
             for (int k = 0; k < 512; k++) {
                 if (!(src_pd[k] & VMM_PRESENT)) { dst_pd[k] = 0; continue; }
-                /* 2MB 大页：暂不深拷贝，直接共享（内核恒等映射会走这里） */
+                /* 2MB 大页：直接共享（内核恒等映射会走这里，但我们只处理低半区，
+                   低半区用户空间通常是 4KB 页） */
                 if (src_pd[k] & VMM_HUGE) {
                     dst_pd[k] = src_pd[k];
                     continue;
@@ -201,6 +215,7 @@ uint64_t vmm_clone_pml4_deep(uint64_t src_pml4_phys) {
                 uint64_t src_pt_phys = src_pd[k] & ADDR_MASK;
                 uint64_t dst_pt_phys = pmm_alloc_page();
                 if (!dst_pt_phys) return 0;
+                zero_page(dst_pt_phys);
 
                 uint64_t* src_pt = (uint64_t*)(uintptr_t)src_pt_phys;
                 uint64_t* dst_pt = (uint64_t*)(uintptr_t)dst_pt_phys;
@@ -220,4 +235,27 @@ uint64_t vmm_clone_pml4_deep(uint64_t src_pml4_phys) {
     serial_printf("VMM: deep-cloned PML4 0x%lx -> 0x%lx\n",
                   src_pml4_phys, dst_pml4_phys);
     return dst_pml4_phys;
+}
+
+void vmm_page_fault_handler(struct regs* r) {
+    uint64_t cr2;
+    __asm__ volatile ("mov %%cr2, %0" : "=r"(cr2));
+
+    serial_printf("\n*** PAGE FAULT ***\n");
+    serial_printf("virt     = "); serial_hex(cr2);        serial_write("\n");
+    serial_printf("err_code = "); serial_hex(r->err_code); serial_write("\n");
+    serial_printf("  P     = ");
+    serial_puts_dec((r->err_code & 1) ? 1 : 0);
+    serial_write(" (0=not-present, 1=protection)\n");
+    serial_printf("  W/R   = ");
+    serial_puts_dec((r->err_code & 2) ? 1 : 0);
+    serial_write(" (0=read, 1=write)\n");
+    serial_printf("  U/S   = ");
+    serial_puts_dec((r->err_code & 4) ? 1 : 0);
+    serial_write(" (0=kernel, 1=user)\n");
+    serial_printf("rip      = "); serial_hex(r->rip);      serial_write("\n");
+
+    for (;;) {
+        __asm__ volatile ("hlt");
+    }
 }

@@ -1,20 +1,17 @@
 #include "task.h"
 #include "heap.h"
+#include "vmm.h"
 #include "serial.h"
 #include "gdt.h"
 #include <stdint.h>
 
-extern uint64_t saved_user_rsp;
-extern uint64_t kernel_rsp;
-
-static uint64_t get_saved_user_rsp(void) { return saved_user_rsp; }
-static void     set_saved_user_rsp(uint64_t v) { saved_user_rsp = v; }
-
-extern uint64_t kernel_rsp;
-static inline void set_kernel_rsp(uint64_t v) { kernel_rsp = v; }
-
 #define TIMESLICE 5
 #define MAX_SLEEPERS 32
+
+extern uint64_t kernel_rsp;
+extern uint64_t saved_user_rsp;
+extern uint64_t syscall_user_rcx;
+extern void     fork_child_entry(void);
 
 static task_t* current = 0;
 static uint32_t next_id = 1;
@@ -35,6 +32,8 @@ static inline void write_cr3(uint64_t v) {
     __asm__ volatile ("mov %0, %%cr3" : : "r"(v) : "memory");
 }
 
+static inline void set_kernel_rsp(uint64_t v) { kernel_rsp = v; }
+
 void task_init(void) {
     for (int i = 0; i < MAX_SLEEPERS; i++) sleepers[i].used = 0;
     global_tick = 0;
@@ -44,13 +43,14 @@ void task_init(void) {
     current->stack_base = 0;
     current->stack_size = 0;
     current->kernel_stack_top = 0;
+    current->saved_user_rsp   = 0;
+    current->pml4_phys        = 0;
     current->id         = 0;
     current->state      = TASK_RUNNING;
     current->name       = "kmain";
     current->next       = current;
     current->wq_next    = 0;
-    current->saved_user_rsp = 0;
-    current->pml4_phys = 0;   /* kmain 用当前 CR3 */
+    current->parent     = 0;
     serial_printf("TASK: init, current = kmain\n");
 }
 
@@ -62,21 +62,22 @@ task_t* task_create(const char* name, void (*entry)(void)) {
     t->state      = TASK_READY;
     t->name       = name;
     t->wq_next    = 0;
+    t->parent     = 0;
     t->saved_user_rsp = 0;
-    t->pml4_phys = 0;   /* 默认共享当前页表 */
+    t->pml4_phys      = 0;
 
     uint64_t stack_top = t->stack_base + TASK_STACK_SIZE;
     stack_top &= ~0xFULL;
     uint64_t* sp = (uint64_t*)stack_top;
-    *--sp = 0;
-    *--sp = (uint64_t)entry;
-    *--sp = 0x202ULL;
-    *--sp = 0;
-    *--sp = 0;
-    *--sp = 0;
-    *--sp = 0;
-    *--sp = 0;
-    *--sp = 0;
+    *--sp = 0;                       /* dummy */
+    *--sp = (uint64_t)entry;         /* ret 目标 */
+    *--sp = 0x202;                   /* rflags */
+    *--sp = 0;                       /* rbp */
+    *--sp = 0;                       /* rbx */
+    *--sp = 0;                       /* r12 */
+    *--sp = 0;                       /* r13 */
+    *--sp = 0;                       /* r14 */
+    *--sp = 0;                       /* r15 */
     t->rsp = (uint64_t)sp;
     t->kernel_stack_top = t->stack_base + TASK_STACK_SIZE;
 
@@ -109,9 +110,9 @@ void schedule(void) {
         set_kernel_rsp(next->kernel_stack_top);
     }
 
-    /* 保存当前任务的用户态 rsp，加载下一个任务的 */
-    prev->saved_user_rsp = get_saved_user_rsp();
-    set_saved_user_rsp(next->saved_user_rsp);
+    if (next->pml4_phys) {
+        write_cr3(next->pml4_phys);
+    }
 
     task_switch(&prev->rsp, next->rsp);
 }
@@ -186,4 +187,50 @@ void task_sleep(uint64_t ms) {
 
     current->state = TASK_BLOCKED;
     schedule();
+}
+
+int task_fork(void) {
+    task_t* parent = current;
+
+    task_t* child = (task_t*)kmalloc(sizeof(task_t));
+    if (!child) return -1;
+
+    uint64_t parent_pml4 = vmm_current_pml4();
+    uint64_t child_pml4  = vmm_clone_pml4_deep(parent_pml4);
+    if (!child_pml4) {
+        kfree(child);
+        return -1;
+    }
+
+    child->stack_base       = (uint64_t)kmalloc(TASK_STACK_SIZE);
+    child->stack_size       = TASK_STACK_SIZE;
+    child->kernel_stack_top = child->stack_base + TASK_STACK_SIZE;
+    child->pml4_phys        = child_pml4;
+    child->saved_user_rsp   = saved_user_rsp;
+    child->id               = next_id++;
+    child->state            = TASK_READY;
+    child->name             = "child";
+    child->next             = 0;
+    child->wq_next          = 0;
+    child->parent           = parent;
+
+    uint64_t top = child->kernel_stack_top & ~0xFULL;
+    uint64_t* sp = (uint64_t*)top;
+    *--sp = (uint64_t)fork_child_entry;
+    *--sp = 0x202;
+    *--sp = 0;
+    *--sp = 0;
+    *--sp = 0;
+    *--sp = 0;
+    *--sp = saved_user_rsp;
+    *--sp = syscall_user_rcx;
+    child->rsp = (uint64_t)sp;
+
+    child->next   = current->next;
+    current->next = child;
+
+    serial_printf("FORK: child id=%u pml4=0x%lx user_rip=0x%lx user_rsp=0x%lx\n",
+                  child->id, child_pml4, syscall_user_rcx, saved_user_rsp);
+
+    return (int)child->id;
 }
