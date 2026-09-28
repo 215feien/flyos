@@ -1,6 +1,8 @@
 #ifndef USER_SYSCALL_H
 #define USER_SYSCALL_H
 
+#include <stdint.h>
+
 typedef long i64;
 
 #define SYS_WRITE   1
@@ -30,6 +32,7 @@ typedef long i64;
 #define SYS_FAT_DELETE  25
 #define SYS_SET_FG     26
 #define SYS_WAIT       27
+#define SYS_SYSINFO    28
 
 i64  sys_write (int fd, const void* buf, i64 n);
 i64  sys_read  (int fd, void* buf,       i64 n);
@@ -58,5 +61,6 @@ i64 sys_fat_write(const char* name, const void* data, i64 size);
 i64 sys_fat_delete(const char* name);
 i64 sys_set_fg(void);
 i64 sys_wait(void);
+i64 sys_sysinfo(uint64_t* out);
 
 #endif

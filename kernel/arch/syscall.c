@@ -20,6 +20,8 @@
 #define MSR_FMASK  0xC0000084
 
 extern void syscall_entry(void);
+extern uint64_t pmm_total_pages(void);
+extern uint64_t pmm_used_pages(void);
 extern int kernel_spawn_child(void);
 extern uint64_t user_return_rip;
 extern uint64_t user_return_rsp;
@@ -238,6 +240,16 @@ uint64_t syscall_dispatch(uint64_t nr, uint64_t a1, uint64_t a2, uint64_t a3) {
         case SYS_WAIT:
             task_wait_child();
             return 0;
+
+        case SYS_SYSINFO: {
+            uint64_t* out = (uint64_t*)a1;
+            out[0] = pmm_total_pages();
+            out[1] = pmm_used_pages();
+            out[2] = 1;
+            extern int task_child_count(void);
+            out[3] = (uint64_t)task_child_count();
+            return 0;
+        }
 
         default:
             serial_printf("SYSCALL: unknown %lu\n", nr);

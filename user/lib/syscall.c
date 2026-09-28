@@ -136,3 +136,6 @@ i64 sys_set_fg(void) {
 i64 sys_wait(void) {
     return syscall3(SYS_WAIT, 0, 0, 0);
 }
+i64 sys_sysinfo(uint64_t* out) {
+    return syscall3(SYS_SYSINFO, (i64)out, 0, 0);
+}

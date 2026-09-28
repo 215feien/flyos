@@ -8,11 +8,17 @@ extern uint8_t _binary_user_hello_elf_start[];
 extern uint8_t _binary_user_hello_elf_end[];
 extern uint8_t _binary_user_calc_elf_start[];
 extern uint8_t _binary_user_calc_elf_end[];
+extern uint8_t _binary_user_game_elf_start[];
+extern uint8_t _binary_user_game_elf_end[];
+extern uint8_t _binary_user_sysinfo_elf_start[];
+extern uint8_t _binary_user_sysinfo_elf_end[];
 
 static app_entry_t app_table[] = {
     { "shell", _binary_user_init_elf_start,  _binary_user_init_elf_end  },
     { "hello", _binary_user_hello_elf_start, _binary_user_hello_elf_end },
     { "calc",  _binary_user_calc_elf_start,  _binary_user_calc_elf_end  },
+    { "game",    _binary_user_game_elf_start,    _binary_user_game_elf_end    },
+    { "sysinfo", _binary_user_sysinfo_elf_start, _binary_user_sysinfo_elf_end },
 };
 static const int app_count = sizeof(app_table) / sizeof(app_table[0]);
 

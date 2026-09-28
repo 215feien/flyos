@@ -39,7 +39,7 @@ USER_LIB_SRCS = user/lib/syscall.c \
                 user/lib/stdlib.c
 USER_LIB_OBJS = $(USER_LIB_SRCS:.c=.o)
 
-OBJS   = $(BOOT_OBJ) $(C_OBJS) $(ASM_OBJS) user/init.elf.o user/hello.elf.o user/calc.elf.o
+OBJS   = $(BOOT_OBJ) $(C_OBJS) $(ASM_OBJS) user/init.elf.o user/hello.elf.o user/calc.elf.o user/game.elf.o user/sysinfo.elf.o
 KERNEL = myos.elf
 ISO    = myos.iso
 DISK   = disk.img
@@ -76,6 +76,30 @@ user/calc.elf: user/calc.o $(USER_LIB_OBJS) user/calc.ld
 	     user/calc.o $(USER_LIB_OBJS)
 
 user/calc.elf.o: user/calc.elf
+	$(OBJCOPY) -I binary -O elf64-x86-64 -B i386:x86-64 \
+	    --rename-section .data=.userelf,alloc,load,readonly,data,contents \
+	    $< $@
+
+user/game.o: user/game.c
+	$(CC) $(USER_CFLAGS) -c $< -o $@
+
+user/game.elf: user/game.o $(USER_LIB_OBJS) user/game.ld
+	$(LD) -m elf_x86_64 -T user/game.ld -nostdlib -o $@ \
+	     user/game.o $(USER_LIB_OBJS)
+
+user/game.elf.o: user/game.elf
+	$(OBJCOPY) -I binary -O elf64-x86-64 -B i386:x86-64 \
+	    --rename-section .data=.userelf,alloc,load,readonly,data,contents \
+	    $< $@
+
+user/sysinfo.o: user/sysinfo.c
+	$(CC) $(USER_CFLAGS) -c $< -o $@
+
+user/sysinfo.elf: user/sysinfo.o $(USER_LIB_OBJS) user/sysinfo.ld
+	$(LD) -m elf_x86_64 -T user/sysinfo.ld -nostdlib -o $@ \
+	     user/sysinfo.o $(USER_LIB_OBJS)
+
+user/sysinfo.elf.o: user/sysinfo.elf
 	$(OBJCOPY) -I binary -O elf64-x86-64 -B i386:x86-64 \
 	    --rename-section .data=.userelf,alloc,load,readonly,data,contents \
 	    $< $@
@@ -120,4 +144,6 @@ clean:
 	rm -f user/init.o  user/init.elf  user/init.elf.o
 	rm -f user/hello.o user/hello.elf user/hello.elf.o
 	rm -f user/calc.o user/calc.elf user/calc.elf.o
+	rm -f user/game.o user/game.elf user/game.elf.o
+	rm -f user/sysinfo.o user/sysinfo.elf user/sysinfo.elf.o
 	rm -rf iso
