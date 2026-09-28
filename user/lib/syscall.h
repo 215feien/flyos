@@ -28,6 +28,8 @@ typedef long i64;
 #define SYS_FAT_READ  23
 #define SYS_FAT_WRITE   24
 #define SYS_FAT_DELETE  25
+#define SYS_SET_FG     26
+#define SYS_WAIT       27
 
 i64  sys_write (int fd, const void* buf, i64 n);
 i64  sys_read  (int fd, void* buf,       i64 n);
@@ -54,5 +56,7 @@ i64 sys_fat_ls(char* buf, i64 max);
 i64 sys_fat_read(const char* name, void* buf, i64 max);
 i64 sys_fat_write(const char* name, const void* data, i64 size);
 i64 sys_fat_delete(const char* name);
+i64 sys_set_fg(void);
+i64 sys_wait(void);
 
 #endif

@@ -25,6 +25,9 @@ typedef struct {
 
 static sleeper_t sleepers[MAX_SLEEPERS];
 static uint64_t  global_tick = 0;
+static int       child_alive = 0;
+static task_t* foreground = 0;
+static wait_queue_t child_exit_wq;
 
 extern void task_switch(uint64_t* old_rsp_ptr, uint64_t new_rsp);
 
@@ -51,6 +54,7 @@ void task_init(void) {
     current->next       = current;
     current->wq_next    = 0;
     current->parent     = 0;
+    wait_queue_init(&child_exit_wq);
     serial_printf("TASK: init, current = kmain\n");
 }
 
@@ -239,3 +243,26 @@ int task_fork(void) {
 int task_current_id(void) {
     return current ? (int)current->id : -1;
 }
+
+void task_set_foreground(task_t* t) { foreground = t; }
+task_t* task_get_foreground(void)   { return foreground; }
+
+void task_wait_child(void) {
+    task_block(&child_exit_wq);
+}
+
+void task_signal_child_exit(void) {
+    wait_queue_wake_all(&child_exit_wq);
+}
+void task_kill_all_children(void) {
+    if (!current) return;
+    task_t* t = current->next;
+    while (t && t != current) {
+        if (t->id != 0) t->state = TASK_DEAD;
+        t = t->next;
+    }
+}
+
+int  task_child_count(void) { return child_alive; }
+void task_child_inc(void)   { child_alive++; }
+void task_child_dec(void)   { if (child_alive > 0) child_alive--; }

@@ -31,5 +31,7 @@ uint64_t syscall_dispatch(uint64_t nr, uint64_t a1, uint64_t a2, uint64_t a3);
 #define SYS_FAT_READ  23
 #define SYS_FAT_WRITE   24
 #define SYS_FAT_DELETE  25
+#define SYS_SET_FG     26
+#define SYS_WAIT       27
 
 #endif

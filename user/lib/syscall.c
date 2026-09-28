@@ -125,6 +125,14 @@ i64 sys_fat_read(const char* name, void* buf, i64 max) {
 i64 sys_fat_write(const char* name, const void* data, i64 size) {
     return syscall3(SYS_FAT_WRITE, (i64)name, (i64)data, size);
 }
+
 i64 sys_fat_delete(const char* name) {
     return syscall3(SYS_FAT_DELETE, (i64)name, 0, 0);
+}
+
+i64 sys_set_fg(void) {
+    return syscall3(SYS_SET_FG, 0, 0, 0);
+}
+i64 sys_wait(void) {
+    return syscall3(SYS_WAIT, 0, 0, 0);
 }

@@ -358,6 +358,7 @@ void kmain(uint32_t mb_info, uint32_t magic) {
     sem_init(0, 1);
 
     task_t* user_task = task_create("user", user_task_entry);
+    task_set_foreground(user_task);
     user_task->pml4_phys = user_pml4;
     serial_printf("MAIN: user task pml4 = 0x%lx\n", user_task->pml4_phys);
     

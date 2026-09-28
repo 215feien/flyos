@@ -159,8 +159,23 @@ static void cmd_fatrm(const char* name) {
 
 static void cmd_run(int argc, char* argv[]) {
     if (argc < 2) { puts("usage: run <app>\n"); return; }
-    sys_exec(argv[1]);
-    printf("run: %s failed\n", argv[1]);
+
+    i64 pid = sys_fork();
+    if (pid == 0) {
+        /* 子进程：宣告自己是前台，然后 exec */
+        sys_set_fg();
+        sys_exec(argv[1]);
+        printf("run: %s failed\n", argv[1]);
+        exit(1);
+    } else if (pid > 0) {
+        printf("started %s as pid %ld (shell suspended)\n", argv[1], (long)pid);
+        /* 父进程：等子进程退出 */
+        sys_wait();
+        printf("WAIT-RETURNED\n");
+        printf("\n[child exited, back to shell]\n\n");
+    } else {
+        puts("fork failed\n");
+    }
 }
 
 static int tokenize(char* line, char* argv[], int max) {

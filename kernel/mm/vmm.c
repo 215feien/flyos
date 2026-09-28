@@ -1,6 +1,7 @@
 #include "vmm.h"
 #include "pmm.h"
 #include "serial.h"
+#include "fb.h"
 #include <stdint.h>
 
 #define ADDR_MASK  (0x000FFFFFFFFFF000ULL)
@@ -224,6 +225,18 @@ uint64_t vmm_clone_pml4_deep(uint64_t src_pml4_phys) {
                 for (int l = 0; l < 512; l++) {
                     if (!(src_pt[l] & VMM_PRESENT)) { dst_pt[l] = 0; continue; }
                     uint64_t src_frame = src_pt[l] & ADDR_MASK;
+
+                    /* framebuffer 共享，不复制 */
+                    fb_info_t* fbi = fb_get_info();
+                    if (fbi && fbi->addr) {
+                        uint64_t fb_phys = fbi->addr;
+                        uint64_t fb_size = (uint64_t)fbi->pitch * fbi->height;
+                        if (src_frame >= fb_phys && src_frame < fb_phys + fb_size) {
+                            dst_pt[l] = src_pt[l];   /* 直接共享 */
+                            continue;
+                        }
+                    }
+
                     uint64_t dst_frame = copy_page(src_frame);
                     if (!dst_frame) return 0;
                     dst_pt[l] = dst_frame | (src_pt[l] & 0xFFF);

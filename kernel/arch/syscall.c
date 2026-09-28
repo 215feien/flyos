@@ -11,6 +11,7 @@
 #include "user.h"
 #include "fat16.h"
 #include "apps.h"
+#include "task.h"
 #include <stdint.h>
 
 #define MSR_EFER   0xC0000080
@@ -59,10 +60,10 @@ uint64_t syscall_dispatch(uint64_t nr, uint64_t a1, uint64_t a2, uint64_t a3) {
         }
 
         case SYS_READ: {
-            extern int task_current_id(void);
-            /* 只有 shell（id=1）能读键盘 */
-            if (task_current_id() != 1) {
-                /* 子进程没键盘权限，直接返回 0 */
+            /* 只有前台任务能读键盘 */
+            if (task_get_foreground() &&
+                task_current() != task_get_foreground()) {
+                task_sleep(50);
                 return 0;
             }
             char* buf = (char*)a2;
@@ -79,7 +80,27 @@ uint64_t syscall_dispatch(uint64_t nr, uint64_t a1, uint64_t a2, uint64_t a3) {
         
         case SYS_EXIT:
             serial_printf("\nSYSCALL: exit(%lu)\n", a1);
-            //persist_save();
+            if (task_current() && task_current()->parent) {
+                task_set_foreground(task_current()->parent);
+            }
+            task_child_dec();
+            task_signal_child_exit();
+            {
+                int c;
+                while ((c = keyboard_getchar_nonblock()) >= 0) { }
+            }
+            persist_save();
+
+            /* shell 退出 = 系统停机 */
+            if (task_current() && task_current()->id == 1) {
+                serial_printf("SYSTEM HALTED\n");
+                __asm__ volatile ("cli");
+                for (;;) __asm__ volatile ("hlt");
+            }
+
+            /* 子进程退出：标记 DEAD，让出 CPU */
+            if (task_current()) task_current()->state = TASK_DEAD;
+            schedule();
             for (;;) __asm__ volatile ("cli; hlt");
 
         case SYS_OPEN:
@@ -209,6 +230,14 @@ uint64_t syscall_dispatch(uint64_t nr, uint64_t a1, uint64_t a2, uint64_t a3) {
 
         case SYS_FAT_DELETE:
             return (uint64_t)(int64_t)fat16_delete_file((const char*)a1);
+
+                case SYS_SET_FG:
+            task_set_foreground(task_current());
+            return 0;
+
+        case SYS_WAIT:
+            task_wait_child();
+            return 0;
 
         default:
             serial_printf("SYSCALL: unknown %lu\n", nr);

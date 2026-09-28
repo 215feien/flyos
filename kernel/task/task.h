@@ -52,4 +52,14 @@ int task_fork(void);
 
 int task_current_id(void);
 
+/* 前台进程 */
+void    task_set_foreground(task_t* t);
+task_t* task_get_foreground(void);
+void    task_wait_child(void);
+void    task_signal_child_exit(void);
+
+void task_kill_all_children(void);
+
+void task_child_dec(void);
+
 #endif
