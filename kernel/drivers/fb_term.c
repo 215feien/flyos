@@ -103,6 +103,11 @@ void fb_term_init(void) {
 }
 
 void fb_term_putc(char c) {
+    extern void fb_cursor_hide(void);
+    extern void fb_cursor_show(void);
+
+    fb_cursor_hide();
+
     if (c == '\n') {
         cursor_x = 0;
         cursor_y++;
@@ -116,10 +121,12 @@ void fb_term_putc(char c) {
                 draw_char_at(' ', cursor_x, cursor_y);
             }
         }
+        fb_cursor_show();
         return;
     } else if (c == '\t') {
         int n = 4 - (cursor_x % 4);
         for (int i = 0; i < n; i++) fb_term_putc(' ');
+        fb_cursor_show();
         return;
     } else {
         if (cursor_y < rows && cursor_x < cols) {
@@ -141,6 +148,8 @@ void fb_term_putc(char c) {
         fb_term_redraw();
         cursor_y = rows - 1;
     }
+
+    fb_cursor_show();
 }
 
 void fb_term_write(const char* s) {

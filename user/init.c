@@ -25,14 +25,14 @@ static void cmd_help(void) {
     puts("  rm <file>           remove file\n");
     puts("  sync                write fs to disk\n");
     puts("  sleep <ms>          sleep milliseconds\n");
-    puts("  spawn               launch child process\n");
-    puts("  fork                spawn a child process\n");
-    puts("  exit                quit shell\n");
-    puts("  exec                replace this process with hello\n");
+    puts("  fork                fork this process\n");
     puts("  fatls               list FAT16 root\n");
     puts("  fatcat <file>       print FAT16 file\n");
     puts("  fatwrite <f> <txt>  write FAT16 file\n");
     puts("  fatrm <file>        delete FAT16 file\n");
+    puts("  run <app>           run app (shell, hello, calc)\n");
+    puts("  spawn               spawn a child process\n");
+    puts("  exit                quit shell\n");
 }
 
 static void cmd_printf_demo(void) {
@@ -80,46 +80,6 @@ static void cmd_cat(const char* name) {
     fs_close(fd);
 }
 
-static void cmd_fatls(void) {
-    static char buf[2048];
-    long n = fs_fat_ls(buf, sizeof(buf));
-    if (n <= 0) { puts("(empty)\n"); return; }
-    for (long i = 0; i < n; i++) putchar(buf[i]);
-}
-
-static void cmd_fatcat(const char* name) {
-    char buf[512];
-    long n = fs_fat_read(name, buf, sizeof(buf));
-    if (n < 0) { printf("fatcat: %s not found\n", name); return; }
-    for (long i = 0; i < n; i++) putchar(buf[i]);
-    putchar('\n');
-}
-
-static void cmd_fatwrite(int argc, char* argv[]) {
-    if (argc < 3) { puts("usage: fatwrite <file> <text...>\n"); return; }
-
-    /* 把 argv[2..] 拼成一整段（含换行） */
-    static char buf[512];
-    int pos = 0;
-    for (int i = 2; i < argc; i++) {
-        if (i > 2 && pos < 511) buf[pos++] = ' ';
-        const char* s = argv[i];
-        while (*s && pos < 510) buf[pos++] = *s++;
-    }
-    buf[pos++] = '\n';
-    buf[pos] = 0;
-
-    if (fs_fat_write(argv[1], buf, pos) == 0)
-        printf("written to %s\n", argv[1]);
-    else
-        printf("fatwrite: %s failed\n", argv[1]);
-}
-
-static void cmd_fatrm(const char* name) {
-    if (fs_fat_delete(name) == 0) printf("removed %s\n", name);
-    else printf("fatrm: %s not found\n", name);
-}
-
 static void cmd_write(int argc, char* argv[]) {
     if (argc < 3) { puts("usage: write <file> <text...>\n"); return; }
     int fd = fs_open(argv[1]);
@@ -160,6 +120,49 @@ static void cmd_sleep(int argc, char* argv[]) {
     printf("awake!\n");
 }
 
+static void cmd_fatls(void) {
+    static char buf[2048];
+    long n = fs_fat_ls(buf, sizeof(buf));
+    if (n <= 0) { puts("(empty)\n"); return; }
+    for (long i = 0; i < n; i++) putchar(buf[i]);
+}
+
+static void cmd_fatcat(const char* name) {
+    char buf[512];
+    long n = fs_fat_read(name, buf, sizeof(buf));
+    if (n < 0) { printf("fatcat: %s not found\n", name); return; }
+    for (long i = 0; i < n; i++) putchar(buf[i]);
+    putchar('\n');
+}
+
+static void cmd_fatwrite(int argc, char* argv[]) {
+    if (argc < 3) { puts("usage: fatwrite <file> <text...>\n"); return; }
+    static char buf[512];
+    int pos = 0;
+    for (int i = 2; i < argc; i++) {
+        if (i > 2 && pos < 511) buf[pos++] = ' ';
+        const char* ss = argv[i];
+        while (*ss && pos < 510) buf[pos++] = *ss++;
+    }
+    buf[pos++] = '\n';
+    buf[pos] = 0;
+    if (fs_fat_write(argv[1], buf, pos) == 0)
+        printf("written to %s\n", argv[1]);
+    else
+        printf("fatwrite: %s failed\n", argv[1]);
+}
+
+static void cmd_fatrm(const char* name) {
+    if (fs_fat_delete(name) == 0) printf("removed %s\n", name);
+    else printf("fatrm: %s not found\n", name);
+}
+
+static void cmd_run(int argc, char* argv[]) {
+    if (argc < 2) { puts("usage: run <app>\n"); return; }
+    sys_exec(argv[1]);
+    printf("run: %s failed\n", argv[1]);
+}
+
 static int tokenize(char* line, char* argv[], int max) {
     int argc = 0;
     char* p = line;
@@ -174,7 +177,7 @@ static int tokenize(char* line, char* argv[], int max) {
 }
 
 void _start(void) {
-    puts("flyos shell v0.6\n");
+    puts("flyos shell v0.7\n");
     puts("type 'help' for commands\n\n");
 
     char* line = (char*)malloc(128);
@@ -212,27 +215,6 @@ void _start(void) {
         }
         else if (strcmp(argv[0], "sync")   == 0) cmd_sync();
         else if (strcmp(argv[0], "sleep")  == 0) cmd_sleep(argc, argv);
-        else if (strcmp(argv[0], "spawn")  == 0) {
-            if (sys_spawn() == 0) puts("spawned child\n");
-            else puts("spawn failed\n");
-        }
-        else if (strcmp(argv[0], "fork")   == 0) {
-            i64 pid = sys_fork();
-            if (pid == 0) {
-                puts("[child] forked, exiting\n");
-                exit(0);
-            } else if (pid > 0) {
-                printf("forked child pid=%ld\n", (long)pid);
-            } else {
-                puts("fork failed\n");
-            }
-        }
-        else if (strcmp(argv[0], "exit")   == 0) exit(0);
-        else if (strcmp(argv[0], "exec")   == 0) {
-            sys_exec();
-            /* 如果 exec 成功，不会返回这里 */
-            puts("exec failed\n");
-        }
         else if (strcmp(argv[0], "fatls")  == 0) cmd_fatls();
         else if (strcmp(argv[0], "fatcat") == 0) {
             if (argc < 2) puts("usage: fatcat <file>\n");
@@ -243,6 +225,12 @@ void _start(void) {
             if (argc < 2) puts("usage: fatrm <file>\n");
             else cmd_fatrm(argv[1]);
         }
+        else if (strcmp(argv[0], "run")    == 0) cmd_run(argc, argv);
+        else if (strcmp(argv[0], "spawn")  == 0) {
+            if (sys_spawn() == 0) puts("spawned child\n");
+            else puts("spawn failed\n");
+        }
+        else if (strcmp(argv[0], "exit")   == 0) exit(0);
         else printf("unknown command: %s\n", argv[0]);
     }
 }

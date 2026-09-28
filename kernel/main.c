@@ -28,6 +28,7 @@
 #include "sem.h"
 #include "pci.h"
 #include "e1000.h"
+#include "apps.h"
 
 extern void user_enter(void* entry, uint64_t user_stack_top);
 extern uint8_t _binary_user_init_elf_start[];
@@ -349,6 +350,8 @@ void kmain(uint32_t mb_info, uint32_t magic) {
     /* 为 user 任务克隆一份独立 PML4 */
     uint64_t user_pml4 = vmm_clone_pml4();
     serial_printf("MAIN: user_pml4 = 0x%lx\n", user_pml4);
+
+    apps_init();
 
     task_init();
     sem_init_all();

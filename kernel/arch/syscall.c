@@ -10,6 +10,7 @@
 #include "sem.h"
 #include "user.h"
 #include "fat16.h"
+#include "apps.h"
 #include <stdint.h>
 
 #define MSR_EFER   0xC0000080
@@ -58,6 +59,12 @@ uint64_t syscall_dispatch(uint64_t nr, uint64_t a1, uint64_t a2, uint64_t a3) {
         }
 
         case SYS_READ: {
+            extern int task_current_id(void);
+            /* 只有 shell（id=1）能读键盘 */
+            if (task_current_id() != 1) {
+                /* 子进程没键盘权限，直接返回 0 */
+                return 0;
+            }
             char* buf = (char*)a2;
             uint64_t want = a3, got = 0;
             while (got < want) {
@@ -69,7 +76,7 @@ uint64_t syscall_dispatch(uint64_t nr, uint64_t a1, uint64_t a2, uint64_t a3) {
             }
             return got;
         }
-
+        
         case SYS_EXIT:
             serial_printf("\nSYSCALL: exit(%lu)\n", a1);
             //persist_save();
@@ -170,16 +177,19 @@ uint64_t syscall_dispatch(uint64_t nr, uint64_t a1, uint64_t a2, uint64_t a3) {
             return (uint64_t)(int64_t)task_fork();
 
         case SYS_EXEC: {
-            uint64_t sz = (uint64_t)(_binary_user_hello_elf_end -
-                                      _binary_user_hello_elf_start);
-            uint64_t entry = user_load_elf(_binary_user_hello_elf_start, sz);
+            const char* name = (const char*)a1;
+            const app_entry_t* app = apps_find(name ? name : "hello");
+            if (!app) {
+                serial_printf("EXEC: app not found\n");
+                return (uint64_t)-1;
+            }
+            uint64_t sz = (uint64_t)(app->elf_end - app->elf_start);
+            uint64_t entry = user_load_elf(app->elf_start, sz);
             if (!entry) return (uint64_t)-1;
-
             user_setup_stack_at(CHILD_STACK_BASE, CHILD_STACK_SIZE);
-
             user_return_rip = entry;
             user_return_rsp = CHILD_STACK_BASE + CHILD_STACK_SIZE;
-            serial_printf("EXEC: jumping to 0x%lx\n", entry);
+            serial_printf("EXEC: loading app entry=0x%lx\n", entry);
             return 0;
         }
 

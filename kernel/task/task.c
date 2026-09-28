@@ -109,7 +109,8 @@ void schedule(void) {
         tss_set_rsp0(next->kernel_stack_top);
         set_kernel_rsp(next->kernel_stack_top);
     }
-
+    prev->saved_user_rsp = saved_user_rsp;   /* 保存当前任务的 */
+    saved_user_rsp = next->saved_user_rsp;   /* 加载下一个任务的 */
     if (next->pml4_phys) {
         write_cr3(next->pml4_phys);
     }
@@ -233,4 +234,8 @@ int task_fork(void) {
                   child->id, child_pml4, syscall_user_rcx, saved_user_rsp);
 
     return (int)child->id;
+}
+
+int task_current_id(void) {
+    return current ? (int)current->id : -1;
 }

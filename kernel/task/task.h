@@ -50,4 +50,6 @@ void task_sleep(uint64_t ms);   /* ← 新增 */
 
 int task_fork(void);
 
+int task_current_id(void);
+
 #endif

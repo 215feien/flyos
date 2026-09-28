@@ -48,7 +48,7 @@ i64  sys_readdir(int fd, char* name, i64 max);
 i64  sys_spawn (void);
 i64 sys_sem_wait(int id);
 i64 sys_sem_post(int id);
-i64 sys_exec(void);
+i64 sys_exec(const char* name);
 i64 sys_fork(void);
 i64 sys_fat_ls(char* buf, i64 max);
 i64 sys_fat_read(const char* name, void* buf, i64 max);

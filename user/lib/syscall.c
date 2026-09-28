@@ -87,12 +87,31 @@ i64 sys_sem_wait(int id) {
 i64 sys_sem_post(int id) {
     return syscall3(SYS_SEM_POST, id, 0, 0);
 }
-i64 sys_exec(void) {
-    return syscall3(SYS_EXEC, 0, 0, 0);
+i64 sys_exec(const char* name) {
+    return syscall3(SYS_EXEC, (i64)name, 0, 0);
 }
 
 i64 sys_fork(void) {
-    return syscall3(SYS_FORK, 0, 0, 0);
+    i64 ret;
+    __asm__ volatile (
+        "push %%rbx\n"
+        "push %%rbp\n"
+        "push %%r12\n"
+        "push %%r13\n"
+        "push %%r14\n"
+        "push %%r15\n"
+        "syscall\n"
+        "pop %%r15\n"
+        "pop %%r14\n"
+        "pop %%r13\n"
+        "pop %%r12\n"
+        "pop %%rbp\n"
+        "pop %%rbx\n"
+        : "=a"(ret)
+        : "a"((i64)SYS_FORK)
+        : "rcx", "r11", "memory"
+    );
+    return ret;
 }
 
 i64 sys_fat_ls(char* buf, i64 max) {

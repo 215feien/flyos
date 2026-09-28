@@ -39,7 +39,7 @@ USER_LIB_SRCS = user/lib/syscall.c \
                 user/lib/stdlib.c
 USER_LIB_OBJS = $(USER_LIB_SRCS:.c=.o)
 
-OBJS   = $(BOOT_OBJ) $(C_OBJS) $(ASM_OBJS) user/init.elf.o user/hello.elf.o
+OBJS   = $(BOOT_OBJ) $(C_OBJS) $(ASM_OBJS) user/init.elf.o user/hello.elf.o user/calc.elf.o
 KERNEL = myos.elf
 ISO    = myos.iso
 DISK   = disk.img
@@ -64,6 +64,18 @@ user/hello.elf: user/hello.o $(USER_LIB_OBJS) user/hello.ld
 	     user/hello.o $(USER_LIB_OBJS)
 
 user/init.elf.o: user/init.elf
+	$(OBJCOPY) -I binary -O elf64-x86-64 -B i386:x86-64 \
+	    --rename-section .data=.userelf,alloc,load,readonly,data,contents \
+	    $< $@
+
+user/calc.o: user/calc.c
+	$(CC) $(USER_CFLAGS) -c $< -o $@
+
+user/calc.elf: user/calc.o $(USER_LIB_OBJS) user/calc.ld
+	$(LD) -m elf_x86_64 -T user/calc.ld -nostdlib -o $@ \
+	     user/calc.o $(USER_LIB_OBJS)
+
+user/calc.elf.o: user/calc.elf
 	$(OBJCOPY) -I binary -O elf64-x86-64 -B i386:x86-64 \
 	    --rename-section .data=.userelf,alloc,load,readonly,data,contents \
 	    $< $@
@@ -107,4 +119,5 @@ clean:
 	rm -f $(USER_LIB_OBJS)
 	rm -f user/init.o  user/init.elf  user/init.elf.o
 	rm -f user/hello.o user/hello.elf user/hello.elf.o
+	rm -f user/calc.o user/calc.elf user/calc.elf.o
 	rm -rf iso
