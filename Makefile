@@ -49,8 +49,12 @@ DISK   = disk.img
 all: $(ISO)
 
 $(DISK):
-	dd if=/dev/zero of=$(DISK) bs=1M count=16 2>/dev/null
-	mkfs.fat -F 16 $(DISK)
+	@echo "[disk] creating 32MB disk: 16MB FAT16 + 16MB FLYOSFS2"
+	dd if=/dev/zero of=/tmp/fat16.img bs=1M count=16 2>/dev/null
+	mkfs.fat -F 16 /tmp/fat16.img > /dev/null
+	dd if=/dev/zero of=/tmp/blank.img bs=1M count=16 2>/dev/null
+	cat /tmp/fat16.img /tmp/blank.img > $(DISK)
+	rm -f /tmp/fat16.img /tmp/blank.img
 	
 user/%.o: user/%.c
 	$(CC) $(USER_CFLAGS) -c $< -o $@

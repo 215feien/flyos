@@ -296,7 +296,7 @@ void kmain(uint32_t mb_info, uint32_t magic) {
 
     ramfs_init();
     file_init();
-    /* persist_load(); */
+    persist_load();
 
     fat16_init(0);
     serial_printf("=== FAT16 test ===\n");

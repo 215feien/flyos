@@ -30,7 +30,8 @@ static void cmd_help(void) {
     puts("  fatcat <file>       print FAT16 file\n");
     puts("  fatwrite <f> <txt>  write FAT16 file\n");
     puts("  fatrm <file>        delete FAT16 file\n");
-    puts("  run <app>           run app (shell, hello, calc)\n");
+    puts("  edit <file>         text editor\n");
+    puts("  run <app>           run app (shell, hello, calc, game, sysinfo)\n");
     puts("  spawn               spawn a child process\n");
     puts("  exit                quit shell\n");
 }
@@ -157,6 +158,72 @@ static void cmd_fatrm(const char* name) {
     else printf("fatrm: %s not found\n", name);
 }
 
+static void cmd_edit(int argc, char* argv[]) {
+    if (argc < 2) { puts("usage: edit <file>\n"); return; }
+
+    /* auto create parent */
+    const char* name = argv[1];
+    int last_slash = -1;
+    for (int i = 0; name[i]; i++) if (name[i] == '/') last_slash = i;
+    if (last_slash > 0) {
+        char parent[128];
+        int plen = last_slash;
+        if (plen > 127) plen = 127;
+        for (int i = 0; i < plen; i++) parent[i] = name[i];
+        parent[plen] = 0;
+        fs_mkdir(parent);
+    }
+
+    char oldbuf[1024];
+    long oldn = 0;
+    int fd = fs_open(argv[1]);
+    if (fd >= 0) {
+        oldn = fs_read(fd, oldbuf, sizeof(oldbuf) - 1);
+        fs_close(fd);
+        if (oldn < 0) oldn = 0;
+    }
+    oldbuf[oldn] = 0;
+
+    puts("\n=== flyos editor ===\n");
+    if (oldn > 0) {
+        puts("current content:\n");
+        puts(oldbuf);
+        if (oldbuf[oldn-1] != '\n') putchar('\n');
+    } else {
+        puts("(new file)\n");
+    }
+    puts("\nenter new content, blank line to finish:\n\n");
+
+    static char newbuf[2048];
+    int pos = 0;
+    for (;;) {
+        puts("> ");
+        char line[128];
+        int len = readline(line, sizeof(line));
+        if (len == 0) break;
+        for (int i = 0; i < len && pos < 2047; i++) {
+            newbuf[pos++] = line[i];
+        }
+        if (pos < 2047) newbuf[pos++] = '\n';
+    }
+    newbuf[pos] = 0;
+
+    /* 空输入 = 保留原文件 */
+    if (pos == 0) {
+        puts("(no changes, keeping original)\n");
+        return;
+    }
+
+    fs_unlink(argv[1]);
+    int fd2 = fs_open(argv[1]);
+    if (fd2 < 0) { puts("edit: write failed\n"); return; }
+    fs_write(fd2, newbuf, pos);
+    fs_close(fd2);
+    fs_sync();
+
+    printf("\nsaved %d bytes to %s\n", pos, argv[1]);
+}
+
 static void cmd_run(int argc, char* argv[]) {
     if (argc < 2) { puts("usage: run <app>\n"); return; }
 
@@ -240,6 +307,7 @@ void _start(void) {
             if (argc < 2) puts("usage: fatrm <file>\n");
             else cmd_fatrm(argv[1]);
         }
+        else if (strcmp(argv[0], "edit")   == 0) cmd_edit(argc, argv);
         else if (strcmp(argv[0], "run")    == 0) cmd_run(argc, argv);
         else if (strcmp(argv[0], "spawn")  == 0) {
             if (sys_spawn() == 0) puts("spawned child\n");

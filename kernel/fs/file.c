@@ -26,8 +26,25 @@ void file_init(void) {
 int file_open(const char* name) {
     ramfs_node_t* n = ramfs_lookup(name);
     if (!n) {
-        /* 不存在就在 cwd 下创建文件 */
-        n = ramfs_create_file(ramfs_cwd(), name);
+        int last_slash = -1;
+        for (int i = 0; name[i]; i++) if (name[i] == '/') last_slash = i;
+
+        if (last_slash >= 0) {
+            char parent_path[128];
+            int plen = last_slash;
+            if (plen > 127) plen = 127;
+            for (int i = 0; i < plen; i++) parent_path[i] = name[i];
+            parent_path[plen] = 0;
+
+            ramfs_node_t* parent = (plen == 0)
+                ? ramfs_root()
+                : ramfs_lookup(parent_path);
+
+            if (!parent || parent->type != NODE_DIR) return -1;
+            n = ramfs_create_file(parent, name + last_slash + 1);
+        } else {
+            n = ramfs_create_file(ramfs_cwd(), name);
+        }
         if (!n) return -1;
     }
     if (n->type != NODE_FILE) return -1;
