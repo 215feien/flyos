@@ -9,9 +9,12 @@ int     file_open(const char* name);
 int     file_close(int fd);
 int64_t file_read (int fd, void* buf, uint64_t n);
 int64_t file_write(int fd, const void* buf, uint64_t n);
+ramfs_node_t* file_open_node(const char* name);
 
 /* 目录遍历：用 fd 作为游标 */
 int     dir_open(const char* name);
 int64_t dir_read(int fd, char* name_out, int max, int* type_out);
+
+int fs_mkdir_path(const char* path);
 
 #endif

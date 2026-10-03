@@ -120,3 +120,41 @@ int64_t dir_read(int fd, char* name_out, int max, int* type_out) {
     }
     return 0;   /* 结束 */
 }
+
+ramfs_node_t* file_open_node(const char* name) {
+    int fd = file_open(name);
+    if (fd < 0) return 0;
+    ramfs_node_t* n = fd_table[fd].node;
+    file_close(fd);
+    return n;
+}
+int fs_mkdir_path(const char* path) {
+    if (!path || !*path) return -1;
+
+    int last_slash = -1;
+    for (int i = 0; path[i]; i++) if (path[i] == '/') last_slash = i;
+
+    ramfs_node_t* parent;
+    const char* name;
+
+    if (last_slash < 0) {
+        parent = ramfs_cwd();
+        name = path;
+    } else if (last_slash == 0) {
+        parent = ramfs_root();
+        name = path + 1;
+    } else {
+        char parent_path[128];
+        int plen = last_slash;
+        if (plen > 127) plen = 127;
+        for (int i = 0; i < plen; i++) parent_path[i] = path[i];
+        parent_path[plen] = 0;
+
+        parent = ramfs_lookup(parent_path);
+        if (!parent || parent->type != NODE_DIR) return -1;
+        name = path + last_slash + 1;
+    }
+
+    ramfs_node_t* n = ramfs_mkdir(parent, name);
+    return n ? 0 : -1;
+}

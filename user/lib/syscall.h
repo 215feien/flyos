@@ -33,6 +33,9 @@ typedef long i64;
 #define SYS_SET_FG     26
 #define SYS_WAIT       27
 #define SYS_SYSINFO    28
+#define SYS_PS         29
+#define SYS_KILL       30
+#define SYS_REDIR      31
 
 i64  sys_write (int fd, const void* buf, i64 n);
 i64  sys_read  (int fd, void* buf,       i64 n);
@@ -62,5 +65,15 @@ i64 sys_fat_delete(const char* name);
 i64 sys_set_fg(void);
 i64 sys_wait(void);
 i64 sys_sysinfo(uint64_t* out);
+i64 sys_ps(char* buf, i64 max);
+i64 sys_kill(i64 pid);
+
+/* v1.16 新增 */
+#define SYS_PS         29
+#define SYS_KILL       30
+
+i64 sys_ps(char* buf, i64 max);
+i64 sys_kill(i64 pid);
+i64 sys_redir(i64 which, const char* name);
 
 #endif

@@ -42,6 +42,10 @@ void task_init(void) {
     global_tick = 0;
 
     current = (task_t*)kmalloc(sizeof(task_t));
+    current->stdin_node = 0;
+    current->stdout_node = 0;
+    current->stdin_pos = 0;
+    current->stdout_pos = 0;
     current->rsp        = 0;
     current->stack_base = 0;
     current->stack_size = 0;
@@ -206,7 +210,11 @@ int task_fork(void) {
         kfree(child);
         return -1;
     }
-
+    
+    child->stdin_node = parent->stdin_node;
+    child->stdout_node = parent->stdout_node;
+    child->stdin_pos = parent->stdin_pos;
+    child->stdout_pos = parent->stdout_pos;
     child->stack_base       = (uint64_t)kmalloc(TASK_STACK_SIZE);
     child->stack_size       = TASK_STACK_SIZE;
     child->kernel_stack_top = child->stack_base + TASK_STACK_SIZE;
@@ -261,6 +269,44 @@ void task_kill_all_children(void) {
         if (t->id != 0) t->state = TASK_DEAD;
         t = t->next;
     }
+}
+
+int task_list_info(char* buf, int max) {
+    if (!current) return 0;
+    static const char* state_names[] = {"READY", "RUNNING", "BLOCKED", "DEAD"};
+    int pos = 0;
+    task_t* t = current;
+    do {
+        char line[64];
+        int li = 0;
+        line[li++] = '[';
+        int id = (int)t->id;
+        char ib[8]; int ii = 0;
+        if (id == 0) ib[ii++] = '0';
+        while (id > 0) { ib[ii++] = (char)('0' + id % 10); id /= 10; }
+        while (ii > 0) line[li++] = ib[--ii];
+        line[li++] = ']'; line[li++] = ' ';
+        for (int k = 0; t->name[k] && li < 40; k++) line[li++] = t->name[k];
+        line[li++] = ' ';
+        const char* st = (t->state <= TASK_DEAD) ? state_names[t->state] : "?";
+        for (int k = 0; st[k] && li < 60; k++) line[li++] = st[k];
+        line[li++] = '\n';
+
+        if (pos + li > max) break;
+        for (int k = 0; k < li; k++) buf[pos++] = line[k];
+        t = t->next;
+    } while (t && t != current);
+    return pos;
+}
+
+int task_kill_by_id(int id) {
+    if (!current || id == 0) return -1;
+    task_t* t = current;
+    do {
+        if (t->id == (uint32_t)id) { t->state = TASK_DEAD; return 0; }
+        t = t->next;
+    } while (t && t != current);
+    return -1;
 }
 
 int  task_child_count(void) { return child_alive; }

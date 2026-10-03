@@ -67,8 +67,35 @@ static void keyboard_handler(struct regs* r) {
     if (scancode < 128) {
         char c = keymap[scancode];
         if (c) {
-            if (shift_pressed && c >= 'a' && c <= 'z') {
-                c = (char)(c - 'a' + 'A');
+            if (shift_pressed) {
+                if (c >= 'a' && c <= 'z') {
+                    c = (char)(c - 'a' + 'A');
+                } else {
+                    switch (c) {
+                        case '1': c = '!'; break;
+                        case '2': c = '@'; break;
+                        case '3': c = '#'; break;
+                        case '4': c = '$'; break;
+                        case '5': c = '%'; break;
+                        case '6': c = '^'; break;
+                        case '7': c = '&'; break;
+                        case '8': c = '*'; break;
+                        case '9': c = '('; break;
+                        case '0': c = ')'; break;
+                        case '-': c = '_'; break;
+                        case '=': c = '+'; break;
+                        case '[': c = '{'; break;
+                        case ']': c = '}'; break;
+                        case '\\': c = '|'; break;
+                        case ';': c = ':'; break;
+                        case '\'': c = '"'; break;
+                        case ',': c = '<'; break;
+                        case '.': c = '>'; break;
+                        case '/': c = '?'; break;
+                        case '`': c = '~'; break;
+                        default: break;
+                    }
+                }
             }
             kbd_push(c);
         }

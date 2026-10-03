@@ -53,22 +53,35 @@ void syscall_init(void) {
 uint64_t syscall_dispatch(uint64_t nr, uint64_t a1, uint64_t a2, uint64_t a3) {
     switch (nr) {
         case SYS_WRITE: {
+            task_t* t = task_current();
             const char* buf = (const char*)a2;
-            for (uint64_t i = 0; i < a3; i++) {
-                serial_putc(buf[i]);
-                fb_term_putc(buf[i]);
+            if (t && t->stdout_node) {
+                ramfs_write((ramfs_node_t*)t->stdout_node, buf, a3, t->stdout_pos);
+                t->stdout_pos += a3;
+            } else {
+                for (uint64_t i = 0; i < a3; i++) {
+                    serial_putc(buf[i]);
+                    fb_term_putc(buf[i]);
+                }
             }
             return a3;
         }
 
         case SYS_READ: {
-            /* 只有前台任务能读键盘 */
+            task_t* t = task_current();
+            char* buf = (char*)a2;
+
+            if (t && t->stdin_node) {
+                int n = ramfs_read((ramfs_node_t*)t->stdin_node, buf, a3, t->stdin_pos);
+                if (n > 0) t->stdin_pos += n;
+                return n > 0 ? (uint64_t)n : 0;
+            }
+
             if (task_get_foreground() &&
-                task_current() != task_get_foreground()) {
+                t != task_get_foreground()) {
                 task_sleep(50);
                 return 0;
             }
-            char* buf = (char*)a2;
             uint64_t want = a3, got = 0;
             while (got < want) {
                 int c;
@@ -79,7 +92,6 @@ uint64_t syscall_dispatch(uint64_t nr, uint64_t a1, uint64_t a2, uint64_t a3) {
             }
             return got;
         }
-        
         case SYS_EXIT:
             serial_printf("\nSYSCALL: exit(%lu)\n", a1);
             if (task_current() && task_current()->parent) {
@@ -153,12 +165,26 @@ uint64_t syscall_dispatch(uint64_t nr, uint64_t a1, uint64_t a2, uint64_t a3) {
             return 0;
 
         case SYS_MKDIR: {
-            ramfs_node_t* cwd0 = ramfs_cwd();
-            serial_printf("MKDIR: cwd=0x%lx '%s'\n",
-                          (uint64_t)cwd0, cwd0 ? cwd0->name : "(null)");
-            ramfs_node_t* n = ramfs_mkdir(cwd0, (const char*)a1);
-            serial_printf("MKDIR: node=0x%lx, children now=0x%lx\n",
-                          (uint64_t)n, cwd0 ? (uint64_t)cwd0->children : 0);
+            const char* name = (const char*)a1;
+            int last_slash = -1;
+            for (int i = 0; name[i]; i++) if (name[i] == '/') last_slash = i;
+
+            ramfs_node_t* parent;
+            const char* base;
+            if (last_slash >= 0) {
+                char parent_path[128];
+                int plen = last_slash;
+                if (plen > 127) plen = 127;
+                for (int i = 0; i < plen; i++) parent_path[i] = name[i];
+                parent_path[plen] = 0;
+                parent = (plen == 0) ? ramfs_root() : ramfs_lookup(parent_path);
+                base = name + last_slash + 1;
+            } else {
+                parent = ramfs_cwd();
+                base = name;
+            }
+            if (!parent || parent->type != NODE_DIR) return (uint64_t)(int64_t)-1;
+            ramfs_node_t* n = ramfs_mkdir(parent, base);
             return n ? 0 : (uint64_t)(int64_t)-1;
         }
 
@@ -248,6 +274,33 @@ uint64_t syscall_dispatch(uint64_t nr, uint64_t a1, uint64_t a2, uint64_t a3) {
             out[2] = 1;
             extern int task_child_count(void);
             out[3] = (uint64_t)task_child_count();
+            return 0;
+        }
+
+        case SYS_PS:
+            return (uint64_t)(int64_t)task_list_info((char*)a1, (int)a2);
+
+        case SYS_KILL:
+            return (uint64_t)(int64_t)task_kill_by_id((int)a1);
+
+        case SYS_REDIR: {
+            int which = (int)a1;
+            const char* name = (const char*)a2;
+            task_t* t = task_current();
+            if (!t) return (uint64_t)-1;
+
+            extern ramfs_node_t* file_open_node(const char* name);
+            ramfs_node_t* n = file_open_node(name);
+            if (!n) return (uint64_t)-1;
+
+            if (which == 0) {
+                t->stdin_node = n;
+                t->stdin_pos = 0;
+            } else {
+                n->size = 0;
+                t->stdout_node = n;
+                t->stdout_pos = 0;
+            }
             return 0;
         }
 

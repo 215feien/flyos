@@ -33,6 +33,10 @@ struct task {
     task_t*      next;
     task_t*      wq_next;
     task_t*      parent;      /* fork 的父任务 */
+    void*    stdin_node;      /* ramfs_node_t*，NULL = 终端 */
+    void*    stdout_node;
+    uint64_t stdin_pos;
+    uint64_t stdout_pos;
 };
 
 void    task_init(void);
@@ -61,5 +65,7 @@ void    task_signal_child_exit(void);
 void task_kill_all_children(void);
 
 void task_child_dec(void);
+int task_list_info(char* buf, int max);
+int task_kill_by_id(int id);
 
 #endif
